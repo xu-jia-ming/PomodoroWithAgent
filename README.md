@@ -1,6 +1,11 @@
 # PomodoroTable
 
-一个番茄钟 MVP 项目（Windows 优先），前端使用 Vue3 + Element Plus，后端使用 FastAPI。后续会补上agent功能, 根据用户习惯(番茄钟持续时间...)给出对应的AI建议.
+一个番茄钟 MVP 项目（Windows 优先），前端使用 Vue 3 + Element Plus，后端使用 FastAPI。
+后续会补充 Agent 功能，根据用户习惯（如番茄钟持续时间等）给出 AI 建议。
+
+## 界面预览
+- Android 界面：![Android 界面](android.png)
+- Windows 界面：![Windows 界面](windows.png)
 
 ## 文档
 - 需求说明：`docs/01-需求说明.md`
@@ -27,16 +32,16 @@ npm install
 npm run dev
 ```
 
-浏览器访问：`http://127.0.0.1:5173`
+浏览器访问：`http://127.0.0.1:5173`（若端口被占用，Vite 会自动切换并在终端提示）
 
 ## 标准 Git 流程（简版）
 ```bash
-git checkout -b feature/mvp-initial
+git checkout -b feature/<module>-<summary>
 # 小步提交
 git add .
-git commit -m "docs(requirements): add mvp docs"
-git commit -m "feat(frontend): implement 5-tab views with element plus"
-git commit -m "feat(backend): add fastapi mvp endpoints"
+git commit -m "feat(frontend): add dark mode theme switch"
+git commit -m "fix(frontend): stabilize fullscreen focus layout"
+git commit -m "docs(readme): refine startup and screenshot sections"
 ```
 
 完整规范见 `docs/04-Git规范流程.md`。
