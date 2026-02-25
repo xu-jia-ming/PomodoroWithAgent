@@ -17,6 +17,7 @@ backend/data/*.db
 # Node / Frontend
 node_modules/
 dist/
+frontend/release/
 coverage/
 *.tsbuildinfo
 frontend/.vite/
