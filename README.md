@@ -35,6 +35,48 @@
  ```
  访问提示：默认会在 `http://127.0.0.1:5173` 启动，端口冲突时 Vite 会自动切换并在终端输出新的地址。
 
+## Windows 打包与安装使用
+### 1）执行打包
+在项目根目录打开 PowerShell：
+
+```bash
+cd frontend
+npm install
+npm run desktop:build
+```
+
+若你在公司/校园网络需要代理，可先执行：
+
+```powershell
+$env:HTTP_PROXY="http://127.0.0.1:7890"
+$env:HTTPS_PROXY="http://127.0.0.1:7890"
+$env:ELECTRON_GET_USE_PROXY="true"
+$env:ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"
+npm run desktop:build
+```
+
+打包产物位置：`frontend/release/PomodoroTable-Setup-0.1.0.exe`。
+
+图标资源位置：
+- 安装包/桌面图标：`frontend/build/icon.ico`
+- 网页与桌面窗口图标：`frontend/public/favicon.ico`
+- 高分辨率图标源：`frontend/public/icon-256.png`
+
+### 2）安装并启动
+1. 双击 `PomodoroTable-Setup-0.1.0.exe`，按向导安装。
+2. 首次启动前，先在 `backend` 目录运行 FastAPI 服务。
+3. 启动桌面应用后，程序会访问本机 `http://127.0.0.1:8000`。
+
+### 3）给其他 Windows 机器使用
+1. 将安装包复制到目标机器。
+2. 目标机器先安装并启动后端服务（或改为可访问的云端 API 地址）。
+3. 再安装桌面客户端即可正常使用。
+
+### 4）替换为你们自己的品牌图标
+1. 准备一个 256x256（或更高）的方形 PNG。
+2. 覆盖 `frontend/public/icon-256.png`，并重新生成 `frontend/build/icon.ico` 与 `frontend/public/favicon.ico`。
+3. 重新执行 `npm run desktop:build`，新的安装包会带上新图标。
+
  ## Git 工作流 & 提交规范
  本项目沿用轻量化流程，推荐每次只实现一个“小功能”或一个 bug 修复再提交。
 
@@ -66,5 +108,5 @@
  - `docs/02-技术方案与架构.md`
  - `docs/03-API设计.md`
  - `docs/04-Git规范流程.md`
- - `docs/05-开发与启动指南.md`# PomodoroTable
+ - `docs/05-开发与启动指南.md`
 

@@ -2,6 +2,10 @@
   "name": "pomodoro-table-frontend",
   "private": true,
   "version": "0.1.0",
+  "description": "PomodoroTable desktop client for Windows",
+  "author": "PomodoroTable Team",
+  "license": "UNLICENSED",
+  "homepage": "https://github.com/jmxjiamingxu/PomodoroTable",
   "main": "main.cjs",
   "type": "module",
   "scripts": {
@@ -30,6 +34,7 @@
   "build": {
     "appId": "com.pomodorotable.desktop",
     "productName": "PomodoroTable",
+    "copyright": "Copyright © 2026 PomodoroTable Team",
     "directories": {
       "buildResources": "build",
       "output": "release"
@@ -41,6 +46,7 @@
       "package.json"
     ],
     "win": {
+      "icon": "build/icon.ico",
       "target": [
         "nsis"
       ],
@@ -52,7 +58,10 @@
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "shortcutName": "PomodoroTable"
+      "shortcutName": "PomodoroTable",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico"
     }
   }
 }
