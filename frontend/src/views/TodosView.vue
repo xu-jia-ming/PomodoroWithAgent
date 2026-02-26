@@ -463,7 +463,8 @@ onBeforeUnmount(() => {
 }
 
 .running-screen {
-  min-height: 72vh;
+  min-height: 100%;
+  height: 100%;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -483,7 +484,7 @@ onBeforeUnmount(() => {
 }
 
 .running-time {
-  font-size: 96px;
+  font-size: clamp(58px, 12vw, 96px);
   line-height: 1;
   font-weight: 700;
   color: var(--focus-text-color, #ffffff);

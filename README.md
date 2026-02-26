@@ -40,6 +40,9 @@
 在项目根目录打开 PowerShell：
 
 ```bash
+cd backend
+conda activate pomodoro-table
+pip install -r requirements-desktop.txt
 cd frontend
 npm install
 npm run desktop:build
@@ -56,6 +59,7 @@ npm run desktop:build
 ```
 
 打包产物位置：`frontend/release/PomodoroTable-Setup-0.1.0.exe`。
+后端产物位置：`backend/dist-desktop/pomodoro-backend.exe`（由 `desktop:build` 自动生成）。
 
 图标资源位置：
 - 安装包/桌面图标：`frontend/build/icon.ico`
@@ -64,13 +68,13 @@ npm run desktop:build
 
 ### 2）安装并启动
 1. 双击 `PomodoroTable-Setup-0.1.0.exe`，按向导安装。
-2. 首次启动前，先在 `backend` 目录运行 FastAPI 服务。
-3. 启动桌面应用后，程序会访问本机 `http://127.0.0.1:8000`。
+2. 启动桌面应用后，内置后端会自动启动并监听 `http://127.0.0.1:8000`。
+3. 本地数据库默认保存在 `%APPDATA%/PomodoroTable/backend-data/pomodoro.db`，首次启动会自动写入默认演示数据。
 
 ### 3）给其他 Windows 机器使用
 1. 将安装包复制到目标机器。
-2. 目标机器先安装并启动后端服务（或改为可访问的云端 API 地址）。
-3. 再安装桌面客户端即可正常使用。
+2. 目标机器只需要安装并启动桌面应用即可（后端已随安装包集成）。
+3. 如需接入远程 API，可设置环境变量 `POMODORO_API_BASE_URL` 覆盖默认地址。
 
 ### 4）替换为你们自己的品牌图标
 1. 准备一个 256x256（或更高）的方形 PNG。

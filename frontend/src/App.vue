@@ -3,7 +3,10 @@
     <div class="app-shell" :class="{ 'android-mode': uiMode === 'android', 'windows-mode': uiMode === 'windows' }">
     <header class="app-header">
       <div class="header-main">
-        <h2>我的番茄钟</h2>
+        <div class="header-title">
+          <h2>PomodoroTable</h2>
+          <p>Focus smarter on Windows and Android</p>
+        </div>
         <div class="header-controls">
           <el-segmented v-model="uiMode" :options="uiOptions" size="small" />
           <el-switch
@@ -43,10 +46,10 @@
     </main>
 
     <footer class="tab-footer">
-      <el-button text :type="activeTab === 'todos' ? 'primary' : ''" @click="activeTab = 'todos'">待办</el-button>
-      <el-button text :type="activeTab === 'collections' ? 'primary' : ''" @click="activeTab = 'collections'">未来待办集</el-button>
-      <el-button text :type="activeTab === 'stats' ? 'primary' : ''" @click="activeTab = 'stats'">统计数据</el-button>
-      <el-button text :type="activeTab === 'profile' ? 'primary' : ''" @click="activeTab = 'profile'">我的</el-button>
+      <el-button text class="nav-btn" :type="activeTab === 'todos' ? 'primary' : ''" @click="activeTab = 'todos'">待办</el-button>
+      <el-button text class="nav-btn" :type="activeTab === 'collections' ? 'primary' : ''" @click="activeTab = 'collections'">未来待办集</el-button>
+      <el-button text class="nav-btn" :type="activeTab === 'stats' ? 'primary' : ''" @click="activeTab = 'stats'">统计数据</el-button>
+      <el-button text class="nav-btn" :type="activeTab === 'profile' ? 'primary' : ''" @click="activeTab = 'profile'">我的</el-button>
     </footer>
   </div>
   </div>
@@ -288,20 +291,26 @@ watch([themeKey, darkMode], ([themeValue, isDark]) => {
 
 <style scoped>
 .app-wrapper {
-  height: 100vh;
-  padding: 0;
+  height: 100dvh;
+  min-height: 100dvh;
+  padding: 12px;
   overflow: hidden;
   display: flex;
-  align-items: center;
+  align-items: stretch;
   justify-content: center;
+  background:
+    radial-gradient(circle at 0% 0%, color-mix(in srgb, var(--app-primary-color, #4a7cff) 22%, transparent), transparent 45%),
+    radial-gradient(circle at 100% 100%, color-mix(in srgb, var(--app-primary-color, #4a7cff) 14%, transparent), transparent 55%),
+    var(--app-bg-color, #eef2f7);
 }
 
 .app-shell {
-  width: 100%;
-  height: 100%;
+  width: min(100%, 1280px);
+  height: calc(100dvh - 24px);
+  min-height: calc(100dvh - 24px);
   display: flex;
   flex-direction: column;
-  background: var(--app-bg-color, #f5f7fa);
+  background: color-mix(in srgb, var(--app-bg-color, #f5f7fa) 86%, var(--app-surface-color, #ffffff));
   color: var(--app-text-color, #1f2d3d);
   --el-color-primary: var(--app-primary-color, #4a7cff);
   --el-text-color-primary: var(--app-text-color, #1f2d3d);
@@ -309,41 +318,62 @@ watch([themeKey, darkMode], ([themeValue, isDark]) => {
 }
 
 .app-shell.windows-mode {
-  width: 75vmin;
-  height: 75vmin;
-  min-width: 620px;
+  width: 100%;
+  height: calc(100dvh - 24px);
   min-height: 620px;
-  max-width: 92vw;
-  max-height: 92vh;
+  max-height: none;
   border: 1px solid var(--app-border-color, #dbe2ea);
-  border-radius: 0;
+  border-radius: 20px;
   overflow: hidden;
+  box-shadow:
+    0 24px 60px rgba(18, 35, 67, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.36);
 }
 
 .app-shell.android-mode {
-  max-width: 390px;
-  height: 844px;
+  width: min(100%, 430px);
+  height: calc(100dvh - 24px);
+  max-height: 900px;
   margin: 0 auto;
-  border-left: 1px solid var(--app-border-color, #dbe2ea);
-  border-right: 1px solid var(--app-border-color, #dbe2ea);
+  border: 1px solid var(--app-border-color, #dbe2ea);
+  border-radius: 28px;
+  box-shadow:
+    0 20px 45px rgba(18, 35, 67, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
 }
 
 .app-header {
-  padding: 12px 16px;
-  background: var(--app-surface-color, #ffffff);
+  padding: 12px 16px 10px;
+  background: color-mix(in srgb, var(--app-surface-color, #ffffff) 86%, transparent);
   border-bottom: 1px solid var(--app-border-color, #dbe2ea);
+  backdrop-filter: blur(8px);
 }
 
 .header-main {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
+}
+
+.header-title h2 {
+  margin: 0;
+  font-size: 22px;
+  letter-spacing: 0.2px;
+}
+
+.header-title p {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--app-text-muted-color, #5f6b7a);
 }
 
 .header-controls {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .theme-switch {
@@ -393,17 +423,26 @@ watch([themeKey, darkMode], ([themeValue, isDark]) => {
 .app-content {
   flex: 1;
   min-height: 0;
-  padding: 12px;
+  padding: 16px;
   overflow-y: auto;
+  background: linear-gradient(
+    165deg,
+    color-mix(in srgb, var(--app-surface-color, #ffffff) 94%, transparent),
+    color-mix(in srgb, var(--app-surface-soft-color, #f6f8fb) 88%, transparent)
+  );
 }
 
 .tab-footer {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 4px;
-  padding: 6px 8px 4px;
-  background: var(--app-surface-color, #ffffff);
+  gap: 8px;
+  padding: 10px 10px calc(10px + env(safe-area-inset-bottom, 0px));
+  background: color-mix(in srgb, var(--app-surface-color, #ffffff) 92%, transparent);
   border-top: 1px solid var(--app-border-color, #dbe2ea);
+  position: sticky;
+  bottom: 0;
+  z-index: 4;
+  flex-shrink: 0;
 }
 
 .tab-footer :deep(.el-button) {
@@ -412,9 +451,14 @@ watch([themeKey, darkMode], ([themeValue, isDark]) => {
   justify-content: center;
   width: 100%;
   min-width: 0;
-  height: 30px;
-  padding: 0 2px;
+  height: 34px;
+  padding: 0 8px;
   line-height: 1;
+  border-radius: 10px;
+}
+
+.tab-footer :deep(.el-button--primary.is-text) {
+  background: color-mix(in srgb, var(--app-primary-color, #4a7cff) 14%, transparent);
 }
 
 .tab-footer :deep(.el-button > span) {
@@ -422,8 +466,38 @@ watch([themeKey, darkMode], ([themeValue, isDark]) => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.2;
+}
+
+@media (max-width: 1024px) {
+  .app-wrapper {
+    padding: 0;
+  }
+
+  .app-shell.windows-mode,
+  .app-shell.android-mode,
+  .app-shell {
+    width: 100%;
+    max-width: none;
+    height: 100dvh;
+    max-height: none;
+    min-height: 100dvh;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .header-title h2 {
+    font-size: 19px;
+  }
+
+  .header-title p {
+    display: none;
+  }
+
+  .app-content {
+    padding: 12px;
+  }
 }
 
 .app-shell :deep(.el-card),

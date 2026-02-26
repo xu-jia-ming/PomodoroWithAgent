@@ -12,9 +12,10 @@
     "dev": "vite",
     "serve": "vite",
     "build": "vite build",
+    "build:backend": "node scripts/build-backend.cjs",
     "preview": "vite preview",
     "desktop:dev": "concurrently -k \"npm run dev\" \"wait-on http://127.0.0.1:5173 && electron .\"",
-    "desktop:build": "npm run build && electron-builder --win"
+    "desktop:build": "npm run build && npm run build:backend && electron-builder --win"
   },
   "dependencies": {
     "axios": "^1.8.1",
@@ -35,11 +36,26 @@
     "appId": "com.pomodorotable.desktop",
     "productName": "PomodoroTable",
     "copyright": "Copyright © 2026 PomodoroTable Team",
+    "disableDefaultIgnoredFiles": true,
     "directories": {
       "buildResources": "build",
       "output": "release"
     },
+    "extraResources": [
+      {
+        "from": "app-dist",
+        "to": "app-dist",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "../backend/dist-desktop/pomodoro-backend.exe",
+        "to": "backend/pomodoro-backend.exe"
+      }
+    ],
     "files": [
+      "app-dist/**/*",
       "dist/**/*",
       "main.cjs",
       "preload.cjs",

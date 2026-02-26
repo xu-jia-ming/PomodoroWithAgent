@@ -1,4 +1,6 @@
 import sqlite3
+import os
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -11,9 +13,20 @@ def _now_utc() -> datetime:
 
 class SQLiteService:
     def __init__(self) -> None:
-        self.db_path = Path(__file__).resolve().parent.parent / "data" / "pomodoro.db"
+        self.db_path = self._resolve_db_path()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
+
+    def _resolve_db_path(self) -> Path:
+        explicit_path = os.getenv("POMODORO_DB_PATH")
+        if explicit_path:
+            return Path(explicit_path).expanduser()
+
+        if getattr(sys, "frozen", False):
+            appdata = Path(os.getenv("APPDATA", Path.home()))
+            return appdata / "PomodoroTable" / "backend-data" / "pomodoro.db"
+
+        return Path(__file__).resolve().parent.parent / "data" / "pomodoro.db"
 
     def _conn(self):
         conn = sqlite3.connect(self.db_path)
