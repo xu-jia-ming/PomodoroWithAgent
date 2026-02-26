@@ -56,7 +56,7 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { Brush, Check, MoonNight, Sunny } from '@element-plus/icons-vue'
 import TodosView from './views/TodosView.vue'
 import CollectionsView from './views/CollectionsView.vue'
@@ -257,6 +257,7 @@ const darkMode = ref(localStorage.getItem('app-dark-mode') === 'true')
 function applyTheme(value, isDark) {
   const palette = isDark ? darkThemes : lightThemes
   const theme = palette[value] || palette['calm-gray']
+  document.documentElement.style.colorScheme = isDark ? 'dark' : 'light'
   document.documentElement.style.setProperty('--app-bg-color', theme.appBg)
   document.documentElement.style.setProperty('--app-surface-color', theme.surface)
   document.documentElement.style.setProperty('--app-surface-soft-color', theme.surfaceSoft)
@@ -276,6 +277,33 @@ function applyTheme(value, isDark) {
   document.documentElement.style.setProperty('--focus-success-color', theme.focusSuccess)
   document.documentElement.style.setProperty('--focus-exit-bg-color', theme.focusExitBg)
   document.documentElement.style.setProperty('--focus-exit-border-color', theme.focusExitBorder)
+
+  // Keep Element Plus global surfaces in sync to avoid white patches in dark mode (dialogs, popovers, inputs).
+  document.documentElement.style.setProperty('--el-bg-color', theme.surface)
+  document.documentElement.style.setProperty('--el-bg-color-page', theme.appBg)
+  document.documentElement.style.setProperty('--el-bg-color-overlay', theme.surface)
+  document.documentElement.style.setProperty('--el-fill-color', theme.surfaceSoft)
+  document.documentElement.style.setProperty('--el-fill-color-light', theme.surfaceSoft)
+  document.documentElement.style.setProperty('--el-fill-color-lighter', theme.surfaceSoft)
+  document.documentElement.style.setProperty('--el-fill-color-extra-light', theme.surfaceSoft)
+  document.documentElement.style.setProperty('--el-fill-color-blank', theme.surface)
+  document.documentElement.style.setProperty('--el-text-color-primary', theme.text)
+  document.documentElement.style.setProperty('--el-text-color-regular', theme.text)
+  document.documentElement.style.setProperty('--el-text-color-secondary', theme.textMuted)
+  document.documentElement.style.setProperty('--el-text-color-placeholder', theme.textMuted)
+  document.documentElement.style.setProperty('--el-border-color', theme.border)
+  document.documentElement.style.setProperty('--el-border-color-light', theme.border)
+  document.documentElement.style.setProperty('--el-border-color-lighter', theme.border)
+  document.documentElement.style.setProperty('--el-border-color-extra-light', theme.border)
+  document.documentElement.style.setProperty('--el-overlay-color', isDark ? 'rgba(0, 0, 0, 0.66)' : 'rgba(0, 0, 0, 0.55)')
+  document.documentElement.style.setProperty('--el-overlay-color-light', isDark ? 'rgba(0, 0, 0, 0.58)' : 'rgba(0, 0, 0, 0.5)')
+  document.documentElement.style.setProperty('--el-overlay-color-lighter', isDark ? 'rgba(0, 0, 0, 0.45)' : 'rgba(0, 0, 0, 0.35)')
+  document.documentElement.style.setProperty('--el-mask-color', isDark ? 'rgba(17, 24, 39, 0.76)' : 'rgba(255, 255, 255, 0.88)')
+  document.documentElement.style.setProperty('--el-mask-color-extra-light', isDark ? 'rgba(17, 24, 39, 0.45)' : 'rgba(255, 255, 255, 0.35)')
+
+  document.body.style.backgroundColor = theme.appBg
+  document.body.style.color = theme.text
+  document.body.style.overflow = 'hidden'
 }
 
 watch(uiMode, (value) => {
@@ -287,12 +315,25 @@ watch([themeKey, darkMode], ([themeValue, isDark]) => {
   localStorage.setItem('app-dark-mode', String(isDark))
   applyTheme(themeValue, isDark)
 }, { immediate: true })
+
+onMounted(() => {
+  document.documentElement.style.height = '100%'
+  document.documentElement.style.overflow = 'hidden'
+  document.body.style.height = '100%'
+  document.body.style.margin = '0'
+  document.body.style.overflow = 'hidden'
+  const appRoot = document.getElementById('app')
+  if (appRoot) {
+    appRoot.style.height = '100%'
+    appRoot.style.overflow = 'hidden'
+  }
+})
 </script>
 
 <style scoped>
 .app-wrapper {
-  height: 100dvh;
-  min-height: 100dvh;
+  height: 100%;
+  min-height: 100%;
   padding: 12px;
   overflow: hidden;
   display: flex;
@@ -306,10 +347,11 @@ watch([themeKey, darkMode], ([themeValue, isDark]) => {
 
 .app-shell {
   width: min(100%, 1280px);
-  height: calc(100dvh - 24px);
-  min-height: calc(100dvh - 24px);
+  height: calc(100% - 24px);
+  min-height: calc(100% - 24px);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   background: color-mix(in srgb, var(--app-bg-color, #f5f7fa) 86%, var(--app-surface-color, #ffffff));
   color: var(--app-text-color, #1f2d3d);
   --el-color-primary: var(--app-primary-color, #4a7cff);
@@ -319,7 +361,7 @@ watch([themeKey, darkMode], ([themeValue, isDark]) => {
 
 .app-shell.windows-mode {
   width: 100%;
-  height: calc(100dvh - 24px);
+  height: calc(100% - 24px);
   min-height: 620px;
   max-height: none;
   border: 1px solid var(--app-border-color, #dbe2ea);
@@ -332,8 +374,8 @@ watch([themeKey, darkMode], ([themeValue, isDark]) => {
 
 .app-shell.android-mode {
   width: min(100%, 430px);
-  height: calc(100dvh - 24px);
-  max-height: 900px;
+  height: calc(100% - 24px);
+  max-height: 100%;
   margin: 0 auto;
   border: 1px solid var(--app-border-color, #dbe2ea);
   border-radius: 28px;
@@ -439,9 +481,9 @@ watch([themeKey, darkMode], ([themeValue, isDark]) => {
   padding: 10px 10px calc(10px + env(safe-area-inset-bottom, 0px));
   background: color-mix(in srgb, var(--app-surface-color, #ffffff) 92%, transparent);
   border-top: 1px solid var(--app-border-color, #dbe2ea);
-  position: sticky;
-  bottom: 0;
-  z-index: 4;
+  margin-top: auto;
+  position: relative;
+  z-index: 2;
   flex-shrink: 0;
 }
 
@@ -480,9 +522,9 @@ watch([themeKey, darkMode], ([themeValue, isDark]) => {
   .app-shell {
     width: 100%;
     max-width: none;
-    height: 100dvh;
+    height: 100%;
     max-height: none;
-    min-height: 100dvh;
+    min-height: 100%;
     border-radius: 0;
     box-shadow: none;
   }

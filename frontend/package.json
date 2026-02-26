@@ -13,9 +13,10 @@
     "serve": "vite",
     "build": "vite build",
     "build:backend": "node scripts/build-backend.cjs",
+    "desktop:prepare": "node scripts/prepare-desktop-build.cjs",
     "preview": "vite preview",
     "desktop:dev": "concurrently -k \"npm run dev\" \"wait-on http://127.0.0.1:5173 && electron .\"",
-    "desktop:build": "npm run build && npm run build:backend && electron-builder --win"
+    "desktop:build": "npm run build && npm run build:backend && npm run desktop:prepare && electron-builder --win"
   },
   "dependencies": {
     "axios": "^1.8.1",
@@ -39,7 +40,7 @@
     "disableDefaultIgnoredFiles": true,
     "directories": {
       "buildResources": "build",
-      "output": "release"
+      "output": "release-build"
     },
     "extraResources": [
       {

@@ -6,7 +6,8 @@ const backendDir = path.resolve(__dirname, '../../backend')
 const distDir = path.join(backendDir, 'dist-desktop')
 const exeName = process.platform === 'win32' ? 'pomodoro-backend.exe' : 'pomodoro-backend'
 const exePath = path.join(distDir, exeName)
-const pythonBin = process.env.PYTHON || 'python'
+const explicitPython = process.env.PYTHON
+const condaEnvName = process.env.POMODORO_CONDA_ENV || 'pomodoro-table'
 
 const pyInstallerArgs = [
   '-m',
@@ -48,12 +49,38 @@ function run(command, args, cwd) {
   }
 }
 
+function canUseConda() {
+  const probe = spawnSync('conda', ['--version'], { stdio: 'ignore', shell: false })
+  return probe.status === 0
+}
+
+function runPyInstaller(cwd) {
+  if (explicitPython) {
+    console.log(`[build-backend] using explicit python: ${explicitPython}`)
+    run(explicitPython, pyInstallerArgs, cwd)
+    return
+  }
+
+  if (canUseConda()) {
+    try {
+      console.log(`[build-backend] using conda env: ${condaEnvName}`)
+      run('conda', ['run', '-n', condaEnvName, 'python', ...pyInstallerArgs], cwd)
+      return
+    } catch (error) {
+      console.warn(`[build-backend] conda env build failed, fallback to system python (${error.message})`)
+    }
+  }
+
+  console.log('[build-backend] using system python')
+  run('python', pyInstallerArgs, cwd)
+}
+
 try {
   if (!fs.existsSync(path.join(backendDir, 'desktop_server.py'))) {
     throw new Error('missing backend/desktop_server.py')
   }
 
-  run(pythonBin, pyInstallerArgs, backendDir)
+  runPyInstaller(backendDir)
 
   if (!fs.existsSync(exePath)) {
     throw new Error(`backend executable not found at ${exePath}`)
@@ -62,7 +89,8 @@ try {
   console.log(`[build-backend] backend packaged: ${exePath}`)
 } catch (error) {
   console.error('[build-backend] failed to package backend executable.')
-  console.error('[build-backend] ensure backend env is active and install: pip install -r backend/requirements-desktop.txt')
+  console.error('[build-backend] install dependency with: conda run -n pomodoro-table pip install -r backend/requirements-desktop.txt')
+  console.error('[build-backend] or set PYTHON to a ready interpreter.')
   console.error(error.message)
   process.exit(1)
 }
