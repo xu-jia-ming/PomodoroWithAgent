@@ -124,27 +124,33 @@ async function createWindow() {
 
   const rendererEntryCandidates = [
     path.join(process.resourcesPath, 'app-dist', 'index.html'),
+    path.join(app.getAppPath(), 'app-dist', 'index.html'),
     path.join(__dirname, 'app-dist', 'index.html'),
+    path.join(process.resourcesPath, 'dist', 'index.html'),
+    path.join(app.getAppPath(), 'dist', 'index.html'),
     path.join(__dirname, 'dist', 'index.html')
   ]
-  const rendererEntry = rendererEntryCandidates.find((candidate) => fs.existsSync(candidate))
 
-  if (!rendererEntry) {
-    dialog.showErrorBox(
-      '应用资源缺失',
-      `未找到渲染入口文件：\n${rendererEntryCandidates.join('\n')}\n\n请重新执行 npm run desktop:build 后安装新版本。`
-    )
-    return
+  const loadErrors = []
+  for (const candidate of rendererEntryCandidates) {
+    try {
+      await window.loadFile(candidate)
+      window.webContents.on('did-fail-load', (_event, code, description, url) => {
+        dialog.showErrorBox(
+          '页面加载失败',
+          `code=${code}\nmessage=${description}\nurl=${url}`
+        )
+      })
+      return
+    } catch (error) {
+      loadErrors.push(`${candidate}\n${String(error && error.message ? error.message : error)}`)
+    }
   }
 
-  window.webContents.on('did-fail-load', (_event, code, description, url) => {
-    dialog.showErrorBox(
-      '页面加载失败',
-      `code=${code}\nmessage=${description}\nurl=${url}`
-    )
-  })
-
-  window.loadFile(rendererEntry)
+  dialog.showErrorBox(
+    '应用资源缺失',
+    `未找到渲染入口文件：\n${rendererEntryCandidates.join('\n')}\n\n加载错误：\n${loadErrors.join('\n\n')}\n\n请重新执行 npm run desktop:build 后安装新版本。`
+  )
 }
 
 app.whenReady().then(() => {

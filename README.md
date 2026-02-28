@@ -6,6 +6,7 @@
  - Windows 风格优先，带有桌面式导航和全局提示。
  - 多视图支持：任务列表、统计面板、个人配置和锁屏模式无缝切换。
  - 后端轻量：FastAPI + Pydantic 的结构让接口既清晰又便于扩展。
+ - Agent 助手：基于 LangChain 分析番茄钟使用画像，输出个性化专注建议。
 
  ## 界面预览
  | 平台 | 预览 |
@@ -26,6 +27,8 @@
  uvicorn main:app --reload --host 127.0.0.1 --port 8000
  ```
  状态检查：`http://127.0.0.1:8000/docs` 可以看到 FastAPI 自动生成的接口文档。
+
+> Agent 依赖已包含在 `backend/requirements.txt`（LangChain + OpenAI SDK）。
 
  ### 2）前端
  ```bash
@@ -81,6 +84,16 @@ npm run desktop:build
 2. 覆盖 `frontend/public/icon-256.png`，并重新生成 `frontend/build/icon.ico` 与 `frontend/public/favicon.ico`。
 3. 重新执行 `npm run desktop:build`，新的安装包会带上新图标。
 
+## AI Agent 使用说明
+1. 进入应用“我的”页面，找到“AI 助手配置”。
+2. 选择厂商，填写 `Base URL`、`Model`、`API Key` 后保存。
+3. 开启“启用AI建议”。
+4. 在“AI 专注建议”中选择统计范围，点击“生成建议”。
+
+说明：
+- 如果未配置 API Key 或调用失败，会自动降级到规则建议。
+- 建议数据会基于最近番茄钟使用记录（完成次数、打断次数、时段分布、平均时长）生成。
+
  ## Git 工作流 & 提交规范
  本项目沿用轻量化流程，推荐每次只实现一个“小功能”或一个 bug 修复再提交。
 
@@ -113,4 +126,5 @@ npm run desktop:build
  - `docs/03-API设计.md`
  - `docs/04-Git规范流程.md`
  - `docs/05-开发与启动指南.md`
+ - `docs/06-近期变更记录.md`
 

@@ -82,3 +82,20 @@ class StatsInterruptRequest(BaseModel):
 class UserInfo(BaseModel):
     id: int
     nickname: str
+
+
+class AIConfigUpdate(BaseModel):
+    provider: str = Field(default="openai_compatible", min_length=1, max_length=64)
+    base_url: Optional[str] = Field(default=None, max_length=300)
+    model: str = Field(default="gpt-4o-mini", min_length=1, max_length=120)
+    temperature: float = Field(default=0.3, ge=0, le=1.5)
+    max_tokens: int = Field(default=700, ge=64, le=8192)
+    enabled: bool = False
+    api_key: Optional[str] = Field(default=None, max_length=500)
+    replace_api_key: bool = False
+    clear_api_key: bool = False
+
+
+class AIAdviceRequest(BaseModel):
+    days: int = Field(default=30, ge=1, le=180)
+    prompt: Optional[str] = Field(default=None, max_length=1000)

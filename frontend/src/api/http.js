@@ -32,27 +32,27 @@ http.interceptors.response.use(
     }
 )
 
-export async function apiGet(url) {
-    const res = await http.get(url)
+export async function apiGet(url, config = {}) {
+    const res = await http.get(url, config)
     return res.data
 }
 
-export async function apiPost(url, payload) {
-    const res = await http.post(url, payload)
+export async function apiPost(url, payload, config = {}) {
+    const res = await http.post(url, payload, config)
     return res.data
 }
 
-export async function apiPatch(url, payload) {
-    const res = await http.patch(url, payload)
+export async function apiPatch(url, payload, config = {}) {
+    const res = await http.patch(url, payload, config)
     return res.data
 }
 
-export async function apiPut(url, payload) {
-    const res = await http.put(url, payload)
+export async function apiPut(url, payload, config = {}) {
+    const res = await http.put(url, payload, config)
     return res.data
 }
 
-export async function apiDelete(url) {
-    const res = await http.delete(url)
+export async function apiDelete(url, config = {}) {
+    const res = await http.delete(url, config)
     return res.data
 }

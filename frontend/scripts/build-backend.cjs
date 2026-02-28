@@ -31,6 +31,14 @@ const pyInstallerArgs = [
   'pydantic',
   '--collect-all',
   'uvicorn',
+  '--collect-all',
+  'langchain',
+  '--collect-all',
+  'langchain_core',
+  '--collect-all',
+  'langchain_openai',
+  '--collect-all',
+  'openai',
   'desktop_server.py'
 ]
 

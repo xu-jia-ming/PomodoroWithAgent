@@ -1,6 +1,6 @@
 <template>
   <div>
-    <el-card v-if="focusScreenVisible" :class="['running-screen', { 'running-screen-full': isWindowsUi }]">
+    <el-card v-if="focusScreenVisible" :class="['running-screen', 'running-screen-full']">
       <div class="running-exit">
         <el-tooltip content="退出锁屏" placement="left">
           <el-button circle size="small" class="running-exit-btn" @click="exitFocusScreen">
@@ -217,7 +217,7 @@ watch([phase, breakKind], () => {
 }, { immediate: true })
 
 watch(focusScreenVisible, (visible) => {
-  document.body.style.overflow = visible && isWindowsUi.value ? 'hidden' : ''
+  document.body.style.overflow = visible ? 'hidden' : ''
   if (visible) {
     void enterFullscreenMode()
     return

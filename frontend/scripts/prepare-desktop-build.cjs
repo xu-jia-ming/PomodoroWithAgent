@@ -2,7 +2,7 @@ const { spawnSync } = require('child_process')
 const fs = require('fs')
 const path = require('path')
 
-const releaseDir = path.resolve(__dirname, '../release')
+const releaseDir = path.resolve(__dirname, '../release-build')
 const winUnpackedDir = path.join(releaseDir, 'win-unpacked')
 const builderConfigFile = path.join(releaseDir, 'builder-effective-config.yaml')
 
