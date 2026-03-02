@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 
-from .schemas import ApiResponse, CollectionCreate, CollectionUpdate, FocusStartRequest, StatsInterruptRequest, StatsRecordRequest, TodoCreate, TodoUpdate
+from .schemas import AIAdviceRequest, AIConfigUpdate, AIPlanOptimizeRequest, ApiResponse, CollectionCreate, CollectionUpdate, FocusStartRequest, StatsInterruptRequest, StatsRecordRequest, TodoCreate, TodoUpdate
 from .services import service
 
 router = APIRouter(prefix="/api")
@@ -104,3 +104,23 @@ def record_interrupt(payload: StatsInterruptRequest):
 @router.get("/me", response_model=ApiResponse)
 def get_me():
     return ApiResponse(data=service.get_me())
+
+
+@router.get("/ai/config", response_model=ApiResponse)
+def get_ai_config():
+    return ApiResponse(data=service.get_ai_config())
+
+
+@router.put("/ai/config", response_model=ApiResponse)
+def save_ai_config(payload: AIConfigUpdate):
+    return ApiResponse(data=service.save_ai_config(payload))
+
+
+@router.post("/ai/advice", response_model=ApiResponse)
+def generate_ai_advice(payload: AIAdviceRequest):
+    return ApiResponse(data=service.generate_ai_advice(payload.days, payload.prompt))
+
+
+@router.post("/ai/plan-optimize", response_model=ApiResponse)
+def optimize_plan(payload: AIPlanOptimizeRequest):
+    return ApiResponse(data=service.generate_plan_optimization(payload.title, payload.segments, payload.prompt))

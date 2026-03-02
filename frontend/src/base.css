@@ -1,0 +1,39 @@
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden !important;
+  background: var(--app-bg-color, #eef2f7);
+  color: var(--app-text-color, #1f2d3d);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* Force Element Plus teleported layers to follow app theme in packaged Electron. */
+.el-popper,
+.el-popover,
+.el-select-dropdown,
+.el-picker-panel,
+.el-dropdown-menu,
+.el-dialog,
+.el-message-box {
+  background: var(--app-surface-color, #ffffff) !important;
+  color: var(--app-text-color, #1f2d3d) !important;
+  border-color: var(--app-border-color, #dbe2ea) !important;
+}
+
+.el-popper .el-popper__arrow::before {
+  background: var(--app-surface-color, #ffffff) !important;
+  border-color: var(--app-border-color, #dbe2ea) !important;
+}
+
+.el-overlay {
+  background-color: var(--el-overlay-color, rgba(0, 0, 0, 0.6)) !important;
+}

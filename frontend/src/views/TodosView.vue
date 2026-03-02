@@ -1,6 +1,6 @@
 <template>
   <div>
-    <el-card v-if="focusScreenVisible" :class="['running-screen', { 'running-screen-full': isWindowsUi }]">
+    <el-card v-if="focusScreenVisible" :class="['running-screen', 'running-screen-full']">
       <div class="running-exit">
         <el-tooltip content="退出锁屏" placement="left">
           <el-button circle size="small" class="running-exit-btn" @click="exitFocusScreen">
@@ -33,40 +33,74 @@
     </el-card>
 
     <template v-else>
-    <el-card>
+    <el-card class="todo-summary-card">
       <template #header>
         <div style="display: flex; justify-content: space-between; align-items: center;">
-          <span>待办</span>
+          <div class="todo-main-head">
+            <span>待办</span>
+            <el-button circle type="primary" @click="openCreateDialog()">
+              <el-icon><Plus /></el-icon>
+            </el-button>
+          </div>
           <el-tag type="warning">已完成 {{ completedPomodoros }} 个</el-tag>
         </div>
       </template>
-
-      <el-form :inline="true" @submit.prevent>
-        <el-form-item>
-          <div style="display:flex; align-items:center; gap:12px;"><el-input v-model="title" placeholder="待办标题" style="width: 240px" />
-          <el-button type="primary" @click="openCreateDialog">新增</el-button></div>
-        </el-form-item>
-      </el-form>
-
-      <el-table :data="todos" style="width: 100%">
-        <el-table-column prop="title" label="标题" />
-        <el-table-column label="操作" width="160" align="center">
-          <template #default="scope">
-            <div class="todo-action-icons">
-              <el-tooltip content="执行" placement="top">
-                <el-button circle size="small" type="primary" @click="executeTodo(scope.row)">▶</el-button>
-              </el-tooltip>
-              <el-tooltip content="修改" placement="top">
-                <el-button circle size="small" @click="openEdit(scope.row)">✎</el-button>
-              </el-tooltip>
-              <el-tooltip content="删除" placement="top">
-                <el-button circle size="small" type="danger" @click="onDelete(scope.row.id)">🗑</el-button>
-              </el-tooltip>
-            </div>
-          </template>
-        </el-table-column>
-      </el-table>
     </el-card>
+
+    <el-empty v-if="!cardGroups.length" description="暂无待办卡片，先新增一个卡片吧" />
+
+    <div v-else class="cards-wrap">
+      <el-card
+        v-for="card in cardGroups"
+        :key="card.key"
+        :class="['todo-group-card', { 'todo-group-card-collapsed': !isCardExpanded(card.key) }]"
+      >
+        <template #header>
+          <div class="card-head-row">
+            <div class="card-head-title">{{ card.name }}</div>
+            <div class="card-head-actions">
+              <el-button text type="primary" @click="toggleCardExpand(card.key)">
+                {{ isCardExpanded(card.key) ? '收起' : '展开' }}
+              </el-button>
+              <el-button text type="primary" @click="openCreateDialog(card.id)">新增</el-button>
+              <template v-if="card.id !== null">
+                <el-button text type="primary" @click="openEditCard(card)">改名</el-button>
+                <el-button text type="primary" @click="openCardAiDialog(card)">AI</el-button>
+                <el-button text type="danger" @click="onDeleteCard(card)">删除</el-button>
+              </template>
+            </div>
+          </div>
+        </template>
+
+        <template v-if="isCardExpanded(card.key)">
+          <el-empty v-if="!card.items.length" description="该卡片暂无待办" />
+
+          <el-table v-else :data="card.items" style="width: 100%">
+            <el-table-column prop="title" label="标题" />
+            <el-table-column label="计时提示" width="180">
+              <template #default="scope">
+                <span>{{ formatTimerHint(scope.row) }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="160" align="center">
+              <template #default="scope">
+                <div class="todo-action-icons">
+                  <el-tooltip content="执行" placement="top">
+                    <el-button circle size="small" type="primary" @click="executeTodo(scope.row)">▶</el-button>
+                  </el-tooltip>
+                  <el-tooltip content="修改" placement="top">
+                    <el-button circle size="small" @click="openEdit(scope.row)">✎</el-button>
+                  </el-tooltip>
+                  <el-tooltip content="删除" placement="top">
+                    <el-button circle size="small" type="danger" @click="onDelete(scope.row.id)">🗑</el-button>
+                  </el-tooltip>
+                </div>
+              </template>
+            </el-table-column>
+          </el-table>
+        </template>
+      </el-card>
+    </div>
 
     <el-dialog v-model="todoDialogVisible" :title="todoDialogMode === 'create' ? '新增待办' : '修改待办'" width="420">
       <el-form label-width="92px">
@@ -85,6 +119,15 @@
         <el-form-item v-else>
           <el-tag type="info">正计时模式不设时长，手动提前完成</el-tag>
         </el-form-item>
+        <el-form-item label="所属卡片">
+          <el-autocomplete
+            v-model="dialogCollectionName"
+            clearable
+            :fetch-suggestions="queryCollectionSuggestions"
+            placeholder="输入或选择待办卡片名"
+            style="width: 220px;"
+          />
+        </el-form-item>
         <el-form-item label="短休息(分钟)">
           <el-tag>5</el-tag>
         </el-form-item>
@@ -97,15 +140,116 @@
         <el-button type="primary" @click="onDialogSave">保存</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="cardDialogVisible" title="修改待办卡片" width="360">
+      <el-form label-width="72px">
+        <el-form-item label="名称">
+          <el-input v-model="cardDialogName" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="cardDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="onCardDialogSave">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="aiAdviceDialogVisible" :title="`AI 专注建议 · ${aiTargetCardName || '未分配卡片'}`" width="760">
+      <el-form label-width="96px">
+        <el-form-item label="统计范围">
+          <el-segmented v-model="adviceDays" :options="adviceRangeOptions" />
+        </el-form-item>
+        <el-form-item label="补充需求">
+          <el-input
+            v-model="advicePrompt"
+            type="textarea"
+            :rows="3"
+            placeholder="例如：我最近下午容易分心，请给具体调整方案"
+          />
+        </el-form-item>
+      </el-form>
+      <div class="inline-actions" style="margin-bottom: 10px;">
+        <el-button type="primary" :loading="generatingAdvice" @click="onGenerateAdvice">生成建议</el-button>
+      </div>
+      <el-alert v-if="adviceMeta.reason" :title="adviceMeta.reason" :type="adviceMeta.used_ai ? 'success' : 'warning'" :closable="false" />
+      <el-alert v-if="adviceHeadline" :title="adviceHeadline" type="info" :closable="false" style="margin-top: 12px;" />
+
+      <div v-if="adviceSections.length" class="advice-sections">
+        <el-card v-for="section in adviceSections" :key="section.title" class="advice-section-card" shadow="never">
+          <template #header>
+            <strong>{{ section.title }}</strong>
+          </template>
+          <ul class="advice-list">
+            <li v-for="(item, index) in section.bullets" :key="`${section.title}-${index}`">{{ item }}</li>
+          </ul>
+        </el-card>
+      </div>
+
+      <el-card v-if="tuningSuggestions.length" class="advice-section-card" shadow="never" style="margin-top: 12px;">
+        <template #header>
+          <div class="card-head-row">
+            <strong>任务调参建议（名称 + 时长）</strong>
+            <el-button type="primary" plain size="small" @click="openConvertDialog">转换为待办卡片</el-button>
+          </div>
+        </template>
+        <el-table :data="tuningSuggestions" size="small" style="width: 100%">
+          <el-table-column prop="current_title" label="当前待办" min-width="150" />
+          <el-table-column prop="suggested_title" label="推荐待办名" min-width="160" />
+          <el-table-column label="时长建议" width="170">
+            <template #default="scope">
+              <span>{{ scope.row.current_focus_minutes }} -> {{ scope.row.suggested_focus_minutes }} 分钟</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="reason" label="原因" min-width="200" />
+        </el-table>
+      </el-card>
+
+      <pre v-if="!adviceSections.length && !tuningSuggestions.length && adviceText" class="advice-content">{{ adviceText }}</pre>
+      <template #footer>
+        <el-button @click="aiAdviceDialogVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="convertDialogVisible" title="转换建议到待办卡片" width="640px">
+      <el-alert
+        type="info"
+        :closable="false"
+        title="勾选要采纳的建议，确认后会自动创建一个 AI 建议待办卡片，并写入对应任务与推荐时长。"
+        style="margin-bottom: 12px;"
+      />
+
+      <el-checkbox-group v-model="selectedSuggestionIndexes" class="suggestion-checklist">
+        <el-card
+          v-for="(item, index) in tuningSuggestions"
+          :key="`${item.current_title}-${index}`"
+          class="suggestion-item-card"
+          shadow="never"
+        >
+          <div class="sync-item-head">
+            <el-checkbox :value="String(index)">
+              {{ item.current_title }} -> {{ item.suggested_title }}
+            </el-checkbox>
+          </div>
+          <div class="sync-item-meta">
+            <span>{{ item.current_focus_minutes }} -> {{ item.suggested_focus_minutes }} 分钟</span>
+            <span>{{ item.reason }}</span>
+          </div>
+        </el-card>
+      </el-checkbox-group>
+
+      <template #footer>
+        <el-button @click="convertDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="convertingSuggestions" @click="onConvertSuggestions">确认转换</el-button>
+      </template>
+    </el-dialog>
     </template>
   </div>
 </template>
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { CircleCheck, CloseBold, RefreshRight, VideoPause, VideoPlay } from '@element-plus/icons-vue'
+import { CircleCheck, CloseBold, Plus, RefreshRight, VideoPause, VideoPlay } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { createTodo, deleteTodo, fetchTodos, recordInterrupt, recordPomodoro, updateTodo } from '../api/pomodoro'
+import { createCollection, createTodo, deleteCollection, deleteTodo, fetchCollections, fetchTodos, generateAiAdvice, recordInterrupt, recordPomodoro, updateCollection, updateTodo } from '../api/pomodoro'
 
 const props = defineProps({
   uiMode: {
@@ -115,7 +259,7 @@ const props = defineProps({
 })
 
 const todos = ref([])
-const title = ref('')
+const collections = ref([])
 const timerMode = ref('countdown')
 const focusMinutes = ref(25)
 const shortBreakMinutes = 5
@@ -134,8 +278,58 @@ const editId = ref(null)
 const dialogTitle = ref('')
 const dialogTimerMode = ref('countdown')
 const dialogFocusMinutes = ref(25)
+const dialogCollectionName = ref('')
+const aiAdviceDialogVisible = ref(false)
+const generatingAdvice = ref(false)
+const adviceDays = ref(30)
+const adviceRangeOptions = [
+  { label: '7天', value: 7 },
+  { label: '30天', value: 30 },
+  { label: '90天', value: 90 }
+]
+const advicePrompt = ref('')
+const adviceText = ref('')
+const adviceHeadline = ref('')
+const adviceSections = ref([])
+const tuningSuggestions = ref([])
+const aiTargetCardId = ref(null)
+const adviceMeta = ref({
+  used_ai: false,
+  provider: '',
+  generated_at: '',
+  reason: ''
+})
+const convertDialogVisible = ref(false)
+const convertingSuggestions = ref(false)
+const selectedSuggestionIndexes = ref([])
+const cardDialogVisible = ref(false)
+const cardDialogId = ref(null)
+const cardDialogName = ref('')
+const expandedCardKeys = ref([])
 let timerRef = null
 const isWindowsUi = computed(() => props.uiMode === 'windows')
+
+const cardGroups = computed(() => {
+  const grouped = collections.value.map((collection) => ({
+    key: `card-${collection.id}`,
+    id: collection.id,
+    name: collection.name,
+    items: todos.value.filter((todo) => todo.collection_id === collection.id)
+  }))
+  const ungrouped = todos.value.filter((todo) => todo.collection_id == null)
+  if (ungrouped.length) {
+    grouped.push({
+      key: 'card-ungrouped',
+      id: null,
+      name: '未分配卡片',
+      items: ungrouped
+    })
+  }
+  return grouped
+})
+
+const aiTargetCard = computed(() => cardGroups.value.find((card) => card.id === aiTargetCardId.value) || null)
+const aiTargetCardName = computed(() => aiTargetCard.value?.name || '')
 
 async function enterFullscreenMode() {
   if (!isWindowsUi.value) {
@@ -217,7 +411,7 @@ watch([phase, breakKind], () => {
 }, { immediate: true })
 
 watch(focusScreenVisible, (visible) => {
-  document.body.style.overflow = visible && isWindowsUi.value ? 'hidden' : ''
+  document.body.style.overflow = visible ? 'hidden' : ''
   if (visible) {
     void enterFullscreenMode()
     return
@@ -230,21 +424,203 @@ async function loadTodos() {
   todos.value = res.data
 }
 
+async function loadCollections() {
+  const res = await fetchCollections()
+  collections.value = Array.isArray(res.data) ? res.data : []
+}
+
+function nextDefaultCardName() {
+  let maxIndex = 0
+  for (const item of collections.value) {
+    const match = /^待办卡片(\d+)$/.exec(String(item.name || '').trim())
+    if (!match) {
+      continue
+    }
+    maxIndex = Math.max(maxIndex, Number(match[1]))
+  }
+  return `待办卡片${maxIndex + 1}`
+}
+
+async function ensureAtLeastOneCard() {
+  if (collections.value.length > 0) {
+    return
+  }
+  await createCollection({ name: nextDefaultCardName() })
+  await loadCollections()
+}
+
+async function loadData() {
+  await Promise.all([loadTodos(), loadCollections()])
+  await ensureAtLeastOneCard()
+}
+
 function resetDialogForm() {
   dialogTitle.value = ''
   dialogTimerMode.value = 'countdown'
   dialogFocusMinutes.value = 25
+  dialogCollectionName.value = ''
 }
 
-function openCreateDialog() {
-  if (!title.value.trim()) {
-    ElMessage.warning('请输入待办标题')
+function isCardExpanded(cardKey) {
+  return expandedCardKeys.value.includes(cardKey)
+}
+
+function toggleCardExpand(cardKey) {
+  if (isCardExpanded(cardKey)) {
+    expandedCardKeys.value = expandedCardKeys.value.filter((item) => item !== cardKey)
     return
   }
+  expandedCardKeys.value = [...expandedCardKeys.value, cardKey]
+}
+
+function openCreateDialog(collectionId) {
   todoDialogMode.value = 'create'
   resetDialogForm()
-  dialogTitle.value = title.value.trim()
+  if (collectionId !== undefined) {
+    const found = collections.value.find((item) => item.id === collectionId)
+    dialogCollectionName.value = found?.name || ''
+  }
   todoDialogVisible.value = true
+}
+
+function queryCollectionSuggestions(queryString, cb) {
+  const keyword = String(queryString || '').trim().toLowerCase()
+  const options = collections.value
+    .map((item) => String(item?.name || '').trim())
+    .filter(Boolean)
+    .filter((name, index, arr) => arr.indexOf(name) === index)
+    .filter((name) => !keyword || name.toLowerCase().includes(keyword))
+    .map((name) => ({ value: name }))
+  cb(options)
+}
+
+function formatDurationLabel(minutes) {
+  const safeMinutes = Math.max(Number(minutes) || 0, 0)
+  if (safeMinutes < 60) {
+    return `${safeMinutes}min`
+  }
+  const hour = Math.floor(safeMinutes / 60)
+  const minute = safeMinutes % 60
+  if (minute === 0) {
+    return `${hour}h`
+  }
+  return `${hour}h${minute}min`
+}
+
+function formatTimerHint(todo) {
+  if ((todo.timer_mode || 'countdown') === 'countup') {
+    return '正计时'
+  }
+  return `倒计时(${formatDurationLabel(todo.focus_minutes || 25)})`
+}
+
+function openCardAiDialog(card) {
+  aiTargetCardId.value = card.id
+  aiAdviceDialogVisible.value = true
+}
+
+async function onGenerateAdvice() {
+  generatingAdvice.value = true
+  try {
+    const aiCardTodos = (aiTargetCard.value?.items || []).map((item) => ({
+      title: item.title,
+      timer_mode: item.timer_mode || 'countdown',
+      focus_minutes: item.focus_minutes || 25
+    }))
+    const cardSummary = aiCardTodos.length
+      ? aiCardTodos.map((item, index) => `${index + 1}. ${item.title}（${item.timer_mode === 'countup' ? '正计时' : `倒计时${item.focus_minutes}分钟`}）`).join('\n')
+      : '当前卡片暂无待办'
+    const mergedPrompt = [
+      `请基于以下待办卡片生成专注建议。卡片名：${aiTargetCardName.value || '未分配卡片'}`,
+      '重点给出：任务拆分、时长调整、执行顺序建议。',
+      `待办列表：\n${cardSummary}`,
+      advicePrompt.value?.trim() ? `补充需求：${advicePrompt.value.trim()}` : ''
+    ].filter(Boolean).join('\n\n')
+    const res = await generateAiAdvice({
+      days: adviceDays.value,
+      prompt: mergedPrompt
+    })
+    const data = res.data || {}
+    adviceText.value = data.advice || ''
+    adviceHeadline.value = data.advice_structured?.headline || ''
+    adviceSections.value = Array.isArray(data.advice_structured?.sections) ? data.advice_structured.sections : []
+    tuningSuggestions.value = Array.isArray(data.advice_structured?.task_tuning_suggestions)
+      ? data.advice_structured.task_tuning_suggestions
+      : []
+    selectedSuggestionIndexes.value = tuningSuggestions.value.map((_, index) => String(index))
+    adviceMeta.value = {
+      used_ai: !!data.used_ai,
+      provider: data.provider || '',
+      generated_at: data.generated_at || '',
+      reason: data.reason || ''
+    }
+  } finally {
+    generatingAdvice.value = false
+  }
+}
+
+function openConvertDialog() {
+  if (!tuningSuggestions.value.length) {
+    ElMessage.warning('暂无可转换的任务调参建议')
+    return
+  }
+  selectedSuggestionIndexes.value = tuningSuggestions.value.map((_, index) => String(index))
+  convertDialogVisible.value = true
+}
+
+function buildAiCollectionName() {
+  const now = new Date()
+  const yyyy = now.getFullYear()
+  const mm = String(now.getMonth() + 1).padStart(2, '0')
+  const dd = String(now.getDate()).padStart(2, '0')
+  const hh = String(now.getHours()).padStart(2, '0')
+  const mi = String(now.getMinutes()).padStart(2, '0')
+  return `AI建议-${yyyy}${mm}${dd}-${hh}${mi}`
+}
+
+async function onConvertSuggestions() {
+  if (!selectedSuggestionIndexes.value.length) {
+    ElMessage.warning('请至少勾选一条建议')
+    return
+  }
+
+  const selected = selectedSuggestionIndexes.value
+    .map((value) => Number(value))
+    .filter((index) => Number.isInteger(index) && index >= 0 && index < tuningSuggestions.value.length)
+    .map((index) => tuningSuggestions.value[index])
+
+  if (!selected.length) {
+    ElMessage.warning('没有可转换的建议，请重新选择')
+    return
+  }
+
+  convertingSuggestions.value = true
+  try {
+    const collectionRes = await createCollection({ name: buildAiCollectionName() })
+    const collectionId = collectionRes.data?.id
+
+    if (!collectionId) {
+      throw new Error('创建待办卡片失败')
+    }
+
+    await Promise.all(
+      selected.map((item) =>
+        createTodo({
+          title: item.suggested_title || item.current_title,
+          estimated_pomodoros: 1,
+          timer_mode: 'countdown',
+          focus_minutes: Math.max(1, Math.min(180, Number(item.suggested_focus_minutes) || 25)),
+          collection_id: collectionId
+        })
+      )
+    )
+
+    convertDialogVisible.value = false
+    ElMessage.success(`已转换 ${selected.length} 条建议到待办卡片`)
+    await loadData()
+  } finally {
+    convertingSuggestions.value = false
+  }
 }
 
 function getElapsedMinutes() {
@@ -386,6 +762,8 @@ function openEdit(todo) {
   dialogTitle.value = todo.title
   dialogTimerMode.value = todo.timer_mode || 'countdown'
   dialogFocusMinutes.value = todo.focus_minutes || 25
+  const found = collections.value.find((item) => item.id === (todo.collection_id ?? null))
+  dialogCollectionName.value = found?.name || ''
   todoDialogVisible.value = true
 }
 
@@ -395,23 +773,39 @@ async function onDialogSave() {
     return
   }
 
+  let targetCollectionId = null
+  const targetCollectionName = String(dialogCollectionName.value || '').trim()
+  if (targetCollectionName) {
+    const existed = collections.value.find((item) => String(item.name || '').trim() === targetCollectionName)
+    if (existed) {
+      targetCollectionId = existed.id
+    } else {
+      const created = await createCollection({ name: targetCollectionName })
+      targetCollectionId = created?.data?.id ?? null
+      await loadCollections()
+      if (targetCollectionId == null) {
+        const fallback = collections.value.find((item) => String(item.name || '').trim() === targetCollectionName)
+        targetCollectionId = fallback?.id ?? null
+      }
+    }
+  }
+
   const payload = {
     title: dialogTitle.value.trim(),
     estimated_pomodoros: 1,
     timer_mode: dialogTimerMode.value,
     focus_minutes: dialogFocusMinutes.value,
-    collection_id: null
+    collection_id: targetCollectionId
   }
 
   if (todoDialogMode.value === 'create') {
     await createTodo(payload)
-    title.value = ''
   } else {
     await updateTodo(editId.value, payload)
   }
 
   todoDialogVisible.value = false
-  await loadTodos()
+  await loadData()
 }
 
 async function onDelete(id) {
@@ -431,14 +825,44 @@ async function onDelete(id) {
     currentTodoTitle.value = ''
     resetTimer()
   }
-  await loadTodos()
+  await loadData()
+}
+
+function openEditCard(card) {
+  cardDialogId.value = card.id
+  cardDialogName.value = card.name
+  cardDialogVisible.value = true
+}
+
+async function onCardDialogSave() {
+  if (!cardDialogName.value.trim()) {
+    ElMessage.warning('请输入待办卡片名称')
+    return
+  }
+  await updateCollection(cardDialogId.value, { name: cardDialogName.value.trim() })
+  cardDialogVisible.value = false
+  await loadCollections()
+}
+
+async function onDeleteCard(card) {
+  try {
+    await ElMessageBox.confirm('确认删除该待办卡片吗？卡片中的待办会变为未分配。', '删除确认', {
+      type: 'warning',
+      confirmButtonText: '确认',
+      cancelButtonText: '取消'
+    })
+  } catch {
+    return
+  }
+  await deleteCollection(card.id)
+  await loadData()
 }
 
 onMounted(async () => {
   phase.value = 'focus'
   resetClockByMode()
   document.addEventListener('fullscreenchange', onFullscreenChange)
-  await loadTodos()
+  await loadData()
 })
 
 onBeforeUnmount(() => {
@@ -463,7 +887,8 @@ onBeforeUnmount(() => {
 }
 
 .running-screen {
-  min-height: 72vh;
+  min-height: 100%;
+  height: 100%;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -483,7 +908,7 @@ onBeforeUnmount(() => {
 }
 
 .running-time {
-  font-size: 96px;
+  font-size: clamp(58px, 12vw, 96px);
   line-height: 1;
   font-weight: 700;
   color: var(--focus-text-color, #ffffff);
@@ -564,5 +989,111 @@ onBeforeUnmount(() => {
   display: flex;
   gap: 6px;
   justify-content: center;
+}
+
+.cards-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.inline-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.advice-content {
+  margin: 12px 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.6;
+  padding: 10px;
+  border: 1px solid var(--app-border-color, #dbe2ea);
+  border-radius: 8px;
+  background: var(--app-surface-soft-color, #f6f8fb);
+}
+
+.advice-sections {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.advice-section-card :deep(.el-card__header) {
+  padding: 10px 14px;
+}
+
+.advice-section-card :deep(.el-card__body) {
+  padding: 10px 14px 12px;
+}
+
+.advice-list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.suggestion-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 420px;
+  overflow: auto;
+}
+
+.suggestion-item-card :deep(.el-card__body) {
+  padding: 10px 12px;
+}
+
+.card-head-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.card-head-title {
+  width: 100%;
+  line-height: 1.3;
+}
+
+.card-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+}
+
+.card-head-actions :deep(.el-button) {
+  flex: 0 0 auto;
+}
+
+.todo-main-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.todo-summary-card :deep(.el-card__header) {
+  border-bottom: none;
+}
+
+.todo-summary-card :deep(.el-card__body) {
+  display: none;
+}
+
+.todo-group-card.todo-group-card-collapsed :deep(.el-card__header) {
+  border-bottom: none;
+}
+
+.todo-group-card.todo-group-card-collapsed :deep(.el-card__body) {
+  display: none;
 }
 </style>

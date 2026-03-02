@@ -1,8 +1,11 @@
 import sqlite3
+import os
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from .schemas import CollectionCreate, CollectionUpdate, FocusStartRequest, TodoCreate, TodoUpdate
+from .agent import PomodoroAdvisorAgent
+from .schemas import AIConfigUpdate, CollectionCreate, CollectionUpdate, FocusStartRequest, PlanSegmentInput, TodoCreate, TodoUpdate
 
 
 def _now_utc() -> datetime:
@@ -11,9 +14,20 @@ def _now_utc() -> datetime:
 
 class SQLiteService:
     def __init__(self) -> None:
-        self.db_path = Path(__file__).resolve().parent.parent / "data" / "pomodoro.db"
+        self.db_path = self._resolve_db_path()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
+
+    def _resolve_db_path(self) -> Path:
+        explicit_path = os.getenv("POMODORO_DB_PATH")
+        if explicit_path:
+            return Path(explicit_path).expanduser()
+
+        if getattr(sys, "frozen", False):
+            appdata = Path(os.getenv("APPDATA", Path.home()))
+            return appdata / "PomodoroTable" / "backend-data" / "pomodoro.db"
+
+        return Path(__file__).resolve().parent.parent / "data" / "pomodoro.db"
 
     def _conn(self):
         conn = sqlite3.connect(self.db_path)
@@ -76,10 +90,32 @@ class SQLiteService:
                 """
             )
             conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS ai_settings (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    provider TEXT NOT NULL DEFAULT 'openai_compatible',
+                    base_url TEXT NULL,
+                    model TEXT NOT NULL DEFAULT 'gpt-4o-mini',
+                    api_key TEXT NULL,
+                    temperature REAL NOT NULL DEFAULT 0.3,
+                    max_tokens INTEGER NOT NULL DEFAULT 700,
+                    enabled INTEGER NOT NULL DEFAULT 0,
+                    updated_at TEXT NULL
+                )
+                """
+            )
+            conn.execute(
                 "INSERT OR IGNORE INTO focus_state (id, active, duration_minutes, end_time) VALUES (1, 0, 0, NULL)"
             )
             conn.execute(
                 "INSERT OR IGNORE INTO users (id, nickname) VALUES (1, 'Windows用户')"
+            )
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO ai_settings
+                (id, provider, base_url, model, api_key, temperature, max_tokens, enabled, updated_at)
+                VALUES (1, 'openai_compatible', NULL, 'gpt-4o-mini', NULL, 0.3, 700, 0, NULL)
+                """
             )
             todo_columns = {
                 row["name"] for row in conn.execute("PRAGMA table_info(todos)").fetchall()
@@ -459,6 +495,567 @@ class SQLiteService:
                 (start_time.isoformat(), end_time.isoformat(), duration_minutes, todo_id, todo_title),
             )
         return self.get_stats()
+
+    def _read_ai_settings_raw(self) -> dict:
+        with self._conn() as conn:
+            row = conn.execute(
+                """
+                SELECT provider, base_url, model, api_key, temperature, max_tokens, enabled, updated_at
+                FROM ai_settings
+                WHERE id = 1
+                """
+            ).fetchone()
+        return {
+            "provider": row["provider"],
+            "base_url": row["base_url"],
+            "model": row["model"],
+            "api_key": row["api_key"],
+            "temperature": row["temperature"],
+            "max_tokens": row["max_tokens"],
+            "enabled": bool(row["enabled"]),
+            "updated_at": row["updated_at"],
+        }
+
+    def _mask_api_key(self, api_key: str | None) -> str | None:
+        if not api_key:
+            return None
+        if len(api_key) <= 10:
+            return f"{api_key[:2]}***"
+        return f"{api_key[:4]}***{api_key[-4:]}"
+
+    def get_ai_config(self) -> dict:
+        config = self._read_ai_settings_raw()
+        return {
+            "provider": config["provider"],
+            "base_url": config["base_url"],
+            "model": config["model"],
+            "temperature": config["temperature"],
+            "max_tokens": config["max_tokens"],
+            "enabled": config["enabled"],
+            "api_key_set": bool(config["api_key"]),
+            "api_key_hint": self._mask_api_key(config["api_key"]),
+            "updated_at": config["updated_at"],
+        }
+
+    def save_ai_config(self, payload: AIConfigUpdate) -> dict:
+        current = self._read_ai_settings_raw()
+        next_api_key = current["api_key"]
+        if payload.clear_api_key:
+            next_api_key = None
+        elif payload.replace_api_key and payload.api_key:
+            next_api_key = payload.api_key.strip()
+
+        normalized_base_url = (payload.base_url or "").strip() or None
+        now_text = _now_utc().isoformat()
+        with self._conn() as conn:
+            conn.execute(
+                """
+                UPDATE ai_settings
+                SET provider = ?, base_url = ?, model = ?, api_key = ?, temperature = ?, max_tokens = ?, enabled = ?, updated_at = ?
+                WHERE id = 1
+                """,
+                (
+                    payload.provider.strip(),
+                    normalized_base_url,
+                    payload.model.strip(),
+                    next_api_key,
+                    float(payload.temperature),
+                    int(payload.max_tokens),
+                    1 if payload.enabled else 0,
+                    now_text,
+                ),
+            )
+        return self.get_ai_config()
+
+    def _build_usage_context(self, days: int = 30) -> dict:
+        now = _now_utc()
+        start = now - timedelta(days=days)
+        with self._conn() as conn:
+            todo_rows = conn.execute(
+                """
+                SELECT id, title, focus_minutes, timer_mode, completed_count, estimated_pomodoros
+                FROM todos
+                ORDER BY id DESC
+                LIMIT 120
+                """
+            ).fetchall()
+            rows = conn.execute(
+                """
+                SELECT start_time, end_time, duration_minutes, todo_id, todo_title, status
+                FROM sessions
+                WHERE end_time >= ?
+                ORDER BY end_time DESC
+                LIMIT 1000
+                """,
+                (start.isoformat(),),
+            ).fetchall()
+
+        completed = []
+        interrupted = []
+        completed_by_hour: dict[int, int] = {}
+        interrupted_by_hour: dict[int, int] = {}
+        weekday_focus: dict[str, int] = {}
+        todo_stats: dict[int, dict] = {}
+
+        for row in rows:
+            end_dt = datetime.fromisoformat(row["end_time"]).astimezone()
+            hour = end_dt.hour
+            weekday = end_dt.strftime("%A")
+            duration = int(row["duration_minutes"])
+            status = row["status"]
+            if status == "completed":
+                completed.append(duration)
+                completed_by_hour[hour] = completed_by_hour.get(hour, 0) + 1
+                weekday_focus[weekday] = weekday_focus.get(weekday, 0) + duration
+                if row["todo_id"] is not None:
+                    info = todo_stats.setdefault(
+                        int(row["todo_id"]),
+                        {"completed_count": 0, "interrupted_count": 0, "sum_completed_minutes": 0},
+                    )
+                    info["completed_count"] += 1
+                    info["sum_completed_minutes"] += duration
+            else:
+                interrupted.append(duration)
+                interrupted_by_hour[hour] = interrupted_by_hour.get(hour, 0) + 1
+                if row["todo_id"] is not None:
+                    info = todo_stats.setdefault(
+                        int(row["todo_id"]),
+                        {"completed_count": 0, "interrupted_count": 0, "sum_completed_minutes": 0},
+                    )
+                    info["interrupted_count"] += 1
+
+        total_sessions = len(rows)
+        completed_count = len(completed)
+        interrupted_count = len(interrupted)
+        average_completed_minutes = round(sum(completed) / completed_count, 2) if completed_count else 0
+        interrupt_rate = round((interrupted_count / total_sessions) * 100, 2) if total_sessions else 0
+
+        top_focus_hours = sorted(completed_by_hour.items(), key=lambda x: x[1], reverse=True)[:3]
+        top_interrupt_hours = sorted(interrupted_by_hour.items(), key=lambda x: x[1], reverse=True)[:3]
+        top_focus_weekdays = sorted(weekday_focus.items(), key=lambda x: x[1], reverse=True)[:3]
+
+        recent_sessions = []
+        for row in rows[:25]:
+            recent_sessions.append(
+                {
+                    "end_time": row["end_time"],
+                    "duration_minutes": row["duration_minutes"],
+                    "status": row["status"],
+                    "todo_title": row["todo_title"],
+                }
+            )
+
+        todo_profiles = []
+        for todo in todo_rows:
+            info = todo_stats.get(todo["id"], {"completed_count": 0, "interrupted_count": 0, "sum_completed_minutes": 0})
+            avg_completed = (
+                round(info["sum_completed_minutes"] / info["completed_count"], 2)
+                if info["completed_count"] > 0
+                else 0
+            )
+            todo_profiles.append(
+                {
+                    "todo_id": todo["id"],
+                    "title": todo["title"],
+                    "focus_minutes": todo["focus_minutes"],
+                    "timer_mode": todo["timer_mode"],
+                    "estimated_pomodoros": todo["estimated_pomodoros"],
+                    "historical_completed_count": todo["completed_count"],
+                    "recent_completed_count": info["completed_count"],
+                    "recent_interrupted_count": info["interrupted_count"],
+                    "recent_avg_completed_minutes": avg_completed,
+                }
+            )
+
+        return {
+            "range_days": days,
+            "total_sessions": total_sessions,
+            "completed_sessions": completed_count,
+            "interrupted_sessions": interrupted_count,
+            "interrupt_rate_percent": interrupt_rate,
+            "average_completed_minutes": average_completed_minutes,
+            "top_focus_hours": [{"hour": h, "count": c} for h, c in top_focus_hours],
+            "top_interrupt_hours": [{"hour": h, "count": c} for h, c in top_interrupt_hours],
+            "top_focus_weekdays": [{"weekday": d, "focus_minutes": m} for d, m in top_focus_weekdays],
+            "recent_sessions": list(reversed(recent_sessions)),
+            "todo_profiles": todo_profiles[:50],
+        }
+
+    def _fallback_ai_advice(self, usage: dict, extra_prompt: str | None = None) -> str:
+        focus_hours = usage.get("top_focus_hours", [])
+        interrupt_hours = usage.get("top_interrupt_hours", [])
+        best_hours = "、".join([f"{item['hour']:02d}:00" for item in focus_hours]) if focus_hours else "暂无明显高效时段"
+        risky_hours = "、".join([f"{item['hour']:02d}:00" for item in interrupt_hours]) if interrupt_hours else "暂无明显高风险时段"
+        avg_minutes = usage.get("average_completed_minutes", 0)
+        interrupt_rate = usage.get("interrupt_rate_percent", 0)
+
+        lines = [
+            "1) 核心观察",
+            f"- 最近{usage.get('range_days', 30)}天完成 {usage.get('completed_sessions', 0)} 次，中断 {usage.get('interrupted_sessions', 0)} 次，中断率约 {interrupt_rate}%。",
+            f"- 你的高效时段：{best_hours}；高打断时段：{risky_hours}。",
+            f"- 完成番茄平均时长约 {avg_minutes} 分钟。",
+            "2) 今日调整建议",
+            "- 把最重要任务安排在你的高效时段，减少临时切换任务。",
+            "- 在高打断时段使用更短番茄（20~25分钟）并关闭通知。",
+            "3) 未来7天策略",
+            "- 每天固定 2 个深度专注窗口，优先完成高价值待办。",
+            "- 若连续2次中断，下一次番茄改为更小目标并先完成最小可交付。",
+            "4) 风险提醒",
+            "- 若中断率持续高于35%，建议减少并行任务数量并复盘打断来源。",
+        ]
+        if extra_prompt:
+            lines.append(f"\n补充需求：{extra_prompt}")
+        lines.append("\n提示：当前为规则引擎建议；配置AI后可生成更个性化分析。")
+        return "\n".join(lines)
+
+    def _build_fallback_tuning_suggestions(self, usage: dict) -> list[dict]:
+        suggestions: list[dict] = []
+        for todo in usage.get("todo_profiles", [])[:8]:
+            title = str(todo.get("title") or "").strip()
+            if not title:
+                continue
+            current_minutes = int(todo.get("focus_minutes") or 25)
+            avg_completed = float(todo.get("recent_avg_completed_minutes") or 0)
+            interrupted_count = int(todo.get("recent_interrupted_count") or 0)
+
+            suggested_title = title
+            if len(title) <= 2 or title.isdigit():
+                suggested_title = f"{title}-明确子任务" if title else "明确任务名称"
+
+            suggested_minutes = current_minutes
+            reason_parts = []
+            if avg_completed and avg_completed < current_minutes * 0.65:
+                suggested_minutes = max(15, min(current_minutes, int(round(max(avg_completed, 15)))))
+                reason_parts.append("近期平均完成时长偏短，建议先降低单次目标时长")
+            elif interrupted_count >= 3:
+                suggested_minutes = max(20, current_minutes - 5)
+                reason_parts.append("近期打断偏多，建议缩短专注周期减少放弃概率")
+            elif avg_completed >= current_minutes * 1.05 and current_minutes < 50:
+                suggested_minutes = min(50, current_minutes + 5)
+                reason_parts.append("你能稳定完成当前周期，可小幅延长提升深度")
+
+            if suggested_title != title:
+                reason_parts.append("任务命名过于宽泛，建议改为可执行子任务名称")
+            if not reason_parts:
+                reason_parts.append("当前设置基本合理，可维持并持续观察完成率")
+
+            suggestions.append(
+                {
+                    "todo_id": todo.get("todo_id"),
+                    "current_title": title,
+                    "suggested_title": suggested_title,
+                    "current_focus_minutes": current_minutes,
+                    "suggested_focus_minutes": int(max(1, min(180, suggested_minutes))),
+                    "reason": "；".join(reason_parts),
+                }
+            )
+            if len(suggestions) >= 5:
+                break
+        return suggestions
+
+    def _fallback_ai_advice_structured(self, usage: dict, extra_prompt: str | None = None) -> dict:
+        focus_hours = usage.get("top_focus_hours", [])
+        interrupt_hours = usage.get("top_interrupt_hours", [])
+        best_hours = "、".join([f"{item['hour']:02d}:00" for item in focus_hours]) if focus_hours else "暂无明显高效时段"
+        risky_hours = "、".join([f"{item['hour']:02d}:00" for item in interrupt_hours]) if interrupt_hours else "暂无明显高风险时段"
+        avg_minutes = usage.get("average_completed_minutes", 0)
+        interrupt_rate = usage.get("interrupt_rate_percent", 0)
+
+        headline = f"最近{usage.get('range_days', 30)}天中断率约{interrupt_rate}%，建议优先稳定高效时段并降低碎片化专注。"
+        sections = [
+            {
+                "title": "核心观察",
+                "bullets": [
+                    f"最近{usage.get('range_days', 30)}天完成 {usage.get('completed_sessions', 0)} 次，中断 {usage.get('interrupted_sessions', 0)} 次。",
+                    f"高效时段：{best_hours}；高打断时段：{risky_hours}。",
+                    f"完成番茄平均时长约 {avg_minutes} 分钟。",
+                ],
+            },
+            {
+                "title": "今日调整建议",
+                "bullets": [
+                    "将最重要任务安排在高效时段，减少任务切换。",
+                    "在高打断时段采用更小任务粒度并开启免打扰。",
+                ],
+            },
+            {
+                "title": "未来7天策略",
+                "bullets": [
+                    "每天固定2个深度专注窗口，优先处理高价值任务。",
+                    "连续2次中断后，下一次番茄钟缩小目标并先完成最小可交付。",
+                ],
+            },
+            {
+                "title": "风险提醒",
+                "bullets": [
+                    "若中断率持续高于35%，建议减少并行任务并复盘打断来源。",
+                    "避免只记录时长不关注产出，需绑定任务结果复盘。",
+                ],
+            },
+        ]
+        if extra_prompt:
+            sections[1]["bullets"].append(f"已结合你的补充需求：{extra_prompt}")
+        return {
+            "headline": headline,
+            "sections": sections,
+            "task_tuning_suggestions": self._build_fallback_tuning_suggestions(usage),
+        }
+
+    def _sanitize_structured_advice(self, advice: dict) -> dict:
+        default_titles = ["核心观察", "今日调整建议", "未来7天策略", "风险提醒"]
+        sections = advice.get("sections") if isinstance(advice, dict) else None
+        if not isinstance(sections, list):
+            raise ValueError("sections must be list")
+
+        normalized = []
+        for index, title in enumerate(default_titles):
+            section = sections[index] if index < len(sections) and isinstance(sections[index], dict) else {}
+            raw_title = str(section.get("title") or title).strip()
+            section_title = raw_title if raw_title in default_titles else title
+            bullets_raw = section.get("bullets") if isinstance(section.get("bullets"), list) else []
+            bullets = []
+            for item in bullets_raw:
+                text = str(item).replace("**", "").replace("`", "").replace("#", "").strip()
+                if not text:
+                    continue
+                if text.startswith("- "):
+                    text = text[2:].strip()
+                bullets.append(text)
+            if not bullets:
+                bullets = ["暂无建议，请稍后重试。"]
+            normalized.append({"title": section_title, "bullets": bullets[:5]})
+
+        headline = str(advice.get("headline") or "").replace("**", "").replace("`", "").replace("#", "").strip()
+        if not headline:
+            headline = "已基于近期番茄钟记录生成专注建议。"
+
+        raw_tuning = advice.get("task_tuning_suggestions") if isinstance(advice, dict) else None
+        tuning_list = raw_tuning if isinstance(raw_tuning, list) else []
+        normalized_tuning = []
+        for item in tuning_list[:8]:
+            if not isinstance(item, dict):
+                continue
+            current_title = str(item.get("current_title") or "").replace("**", "").replace("`", "").strip()
+            suggested_title = str(item.get("suggested_title") or current_title).replace("**", "").replace("`", "").strip()
+            reason = str(item.get("reason") or "").replace("**", "").replace("`", "").replace("#", "").strip()
+            if not current_title:
+                continue
+            try:
+                current_focus_minutes = int(item.get("current_focus_minutes") or 25)
+            except Exception:
+                current_focus_minutes = 25
+            try:
+                suggested_focus_minutes = int(item.get("suggested_focus_minutes") or current_focus_minutes)
+            except Exception:
+                suggested_focus_minutes = current_focus_minutes
+            suggested_focus_minutes = max(1, min(180, suggested_focus_minutes))
+            current_focus_minutes = max(1, min(180, current_focus_minutes))
+            normalized_tuning.append(
+                {
+                    "todo_id": item.get("todo_id"),
+                    "current_title": current_title,
+                    "suggested_title": suggested_title or current_title,
+                    "current_focus_minutes": current_focus_minutes,
+                    "suggested_focus_minutes": suggested_focus_minutes,
+                    "reason": reason or "根据近期完成与打断情况给出的调优建议。",
+                }
+            )
+            if len(normalized_tuning) >= 5:
+                break
+
+        return {"headline": headline, "sections": normalized, "task_tuning_suggestions": normalized_tuning}
+
+    def generate_ai_advice(self, days: int = 30, prompt: str | None = None) -> dict:
+        usage = self._build_usage_context(days)
+        config = self._read_ai_settings_raw()
+
+        if not config["enabled"] or not config["api_key"]:
+            structured = self._fallback_ai_advice_structured(usage, prompt)
+            return {
+                "used_ai": False,
+                "provider": config["provider"],
+                "generated_at": _now_utc().isoformat(),
+                "advice": self._fallback_ai_advice(usage, prompt),
+                "advice_structured": structured,
+                "usage_snapshot": usage,
+                "reason": "AI未启用或未配置API Key",
+            }
+
+        try:
+            agent = PomodoroAdvisorAgent(config)
+            structured_raw = agent.generate(usage, prompt)
+            structured = self._sanitize_structured_advice(structured_raw)
+            advice_text = "\n".join(
+                [structured["headline"]]
+                + [f"{section['title']}：{'；'.join(section['bullets'])}" for section in structured["sections"]]
+            )
+            return {
+                "used_ai": True,
+                "provider": config["provider"],
+                "generated_at": _now_utc().isoformat(),
+                "advice": advice_text,
+                "advice_structured": structured,
+                "usage_snapshot": usage,
+                "reason": "ok",
+            }
+        except Exception as exc:
+            structured = self._fallback_ai_advice_structured(usage, prompt)
+            return {
+                "used_ai": False,
+                "provider": config["provider"],
+                "generated_at": _now_utc().isoformat(),
+                "advice": self._fallback_ai_advice(usage, prompt),
+                "advice_structured": structured,
+                "usage_snapshot": usage,
+                "reason": f"AI调用失败，已降级规则建议：{str(exc)}",
+            }
+
+    def _fallback_plan_optimization(self, title: str, segments: list[dict], prompt: str | None = None) -> dict:
+        suggestions = []
+        for item in segments[:30]:
+            seg_id = str(item.get("id") or "")
+            start = str(item.get("start") or "")
+            end = str(item.get("end") or "")
+            task = str(item.get("task") or "").strip()
+            if not seg_id or not start or not end or not task:
+                continue
+            next_start = start
+            next_end = end
+            next_task = task
+            reason = "建议增加缓冲并明确动作产出。"
+            if task in {"早餐", "午餐", "晚餐"}:
+                reason = "饮食时间可适度放宽，降低赶时间压力。"
+            elif "实验室" in task or "通勤" in task or "路上" in task:
+                reason = "通勤/移动常有不确定性，建议预留机动时间。"
+            elif len(task) < 4:
+                next_task = f"{task}（明确目标）"
+                reason = "任务描述偏短，建议补充可执行目标。"
+            suggestions.append(
+                {
+                    "segment_id": seg_id,
+                    "suggested_start": next_start,
+                    "suggested_end": next_end,
+                    "suggested_task": next_task,
+                    "reason": reason,
+                }
+            )
+        return {
+            "used_ai": False,
+            "provider": self._read_ai_settings_raw().get("provider"),
+            "generated_at": _now_utc().isoformat(),
+            "reason": "AI未启用或调用失败，已使用规则建议",
+            "raw_advice": f"已对计划《{title}》生成规则优化建议。",
+            "suggestions": suggestions,
+            "plan_title": title,
+            "prompt_echo": prompt or "",
+        }
+
+    def generate_plan_optimization(self, title: str, segments: list[PlanSegmentInput], prompt: str | None = None) -> dict:
+        normalized_segments = [
+            {"id": s.id, "start": s.start, "end": s.end, "task": s.task}
+            for s in segments
+            if s and s.id and s.start and s.end and s.task
+        ]
+        if not normalized_segments:
+            return self._fallback_plan_optimization(title, [], prompt)
+
+        config = self._read_ai_settings_raw()
+        if not config["enabled"] or not config["api_key"]:
+            return self._fallback_plan_optimization(title, normalized_segments, prompt)
+
+        try:
+            from langchain_core.output_parsers import JsonOutputParser
+            from langchain_core.prompts import ChatPromptTemplate
+            from langchain_openai import ChatOpenAI
+            from pydantic import BaseModel, Field
+            import json
+
+            class SegmentSuggestion(BaseModel):
+                segment_id: str = Field(description="原计划事件ID")
+                suggested_start: str = Field(description="建议开始时间，格式HH:mm")
+                suggested_end: str = Field(description="建议结束时间，格式HH:mm")
+                suggested_task: str = Field(description="建议事件描述")
+                reason: str = Field(description="建议原因，简洁可执行")
+
+            class PlanOptimizeOutput(BaseModel):
+                summary: str = Field(description="一句话总结")
+                suggestions: list[SegmentSuggestion] = Field(description="逐项建议，至少1条")
+
+            llm_kwargs: dict = {
+                "model": config["model"],
+                "api_key": config["api_key"],
+                "temperature": float(config["temperature"]),
+                "max_tokens": int(config["max_tokens"]),
+                "timeout": float(config.get("request_timeout_seconds", 45)),
+            }
+            base_url = (config.get("base_url") or "").strip()
+            if base_url:
+                llm_kwargs["base_url"] = base_url
+
+            llm = ChatOpenAI(**llm_kwargs)
+            parser = JsonOutputParser(pydantic_object=PlanOptimizeOutput)
+            prompt_tmpl = ChatPromptTemplate.from_messages(
+                [
+                    (
+                        "system",
+                        "你是个人计划优化助手。只基于用户给出的计划内容做优化，不要引用番茄钟统计。"
+                        " 输出必须是纯JSON，不要Markdown，不要解释。"
+                        " suggestions 每条都必须给 segment_id、suggested_start、suggested_end、suggested_task、reason。"
+                        " segment_id 必须从输入事件中选择。时间格式HH:mm。"
+                    ),
+                    (
+                        "human",
+                        "计划标题：{title}\n计划事件(JSON)：\n{segments_json}\n用户补充需求：{extra_prompt}\n\n输出格式要求：{format_instructions}",
+                    ),
+                ]
+            )
+            chain = prompt_tmpl | llm | parser
+            output = chain.invoke(
+                {
+                    "title": title,
+                    "segments_json": json.dumps(normalized_segments, ensure_ascii=False, indent=2),
+                    "extra_prompt": (prompt or "无"),
+                    "format_instructions": parser.get_format_instructions(),
+                }
+            )
+            suggestions_raw = output.get("suggestions") if isinstance(output, dict) else []
+            suggestions = []
+            valid_ids = {s["id"] for s in normalized_segments}
+            for item in (suggestions_raw or []):
+                seg_id = str(item.get("segment_id") or "")
+                if seg_id not in valid_ids:
+                    continue
+                start = str(item.get("suggested_start") or "").strip()
+                end = str(item.get("suggested_end") or "").strip()
+                task = str(item.get("suggested_task") or "").strip()
+                reason_text = str(item.get("reason") or "").strip() or "AI建议优化该事件安排。"
+                if not start or not end or not task:
+                    continue
+                suggestions.append(
+                    {
+                        "segment_id": seg_id,
+                        "suggested_start": start,
+                        "suggested_end": end,
+                        "suggested_task": task,
+                        "reason": reason_text,
+                    }
+                )
+
+            if not suggestions:
+                return self._fallback_plan_optimization(title, normalized_segments, prompt)
+
+            return {
+                "used_ai": True,
+                "provider": config["provider"],
+                "generated_at": _now_utc().isoformat(),
+                "reason": "ok",
+                "raw_advice": str(output.get("summary") or "").strip(),
+                "suggestions": suggestions,
+                "plan_title": title,
+                "prompt_echo": prompt or "",
+            }
+        except Exception:
+            return self._fallback_plan_optimization(title, normalized_segments, prompt)
 
     def get_me(self) -> dict:
         with self._conn() as conn:
