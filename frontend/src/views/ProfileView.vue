@@ -12,7 +12,7 @@
       </el-descriptions>
     </el-card>
 
-    <el-card v-if="false">
+    <el-card>
       <template #header>
         <div class="card-header">
           <span>AI 助手配置</span>
