@@ -17,10 +17,16 @@ backend/data/*.db
 # Node / Frontend
 node_modules/
 dist/
+frontend/app-dist/
+frontend/release-build/
 frontend/release/
 coverage/
 *.tsbuildinfo
 frontend/.vite/
+
+# Desktop build artifacts
+backend/build-desktop/
+backend/dist-desktop/
 
 # Environment files
 .env

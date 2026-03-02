@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .agent import PomodoroAdvisorAgent
-from .schemas import AIConfigUpdate, CollectionCreate, CollectionUpdate, FocusStartRequest, TodoCreate, TodoUpdate
+from .schemas import AIConfigUpdate, CollectionCreate, CollectionUpdate, FocusStartRequest, PlanSegmentInput, TodoCreate, TodoUpdate
 
 
 def _now_utc() -> datetime:
@@ -909,6 +909,153 @@ class SQLiteService:
                 "usage_snapshot": usage,
                 "reason": f"AI调用失败，已降级规则建议：{str(exc)}",
             }
+
+    def _fallback_plan_optimization(self, title: str, segments: list[dict], prompt: str | None = None) -> dict:
+        suggestions = []
+        for item in segments[:30]:
+            seg_id = str(item.get("id") or "")
+            start = str(item.get("start") or "")
+            end = str(item.get("end") or "")
+            task = str(item.get("task") or "").strip()
+            if not seg_id or not start or not end or not task:
+                continue
+            next_start = start
+            next_end = end
+            next_task = task
+            reason = "建议增加缓冲并明确动作产出。"
+            if task in {"早餐", "午餐", "晚餐"}:
+                reason = "饮食时间可适度放宽，降低赶时间压力。"
+            elif "实验室" in task or "通勤" in task or "路上" in task:
+                reason = "通勤/移动常有不确定性，建议预留机动时间。"
+            elif len(task) < 4:
+                next_task = f"{task}（明确目标）"
+                reason = "任务描述偏短，建议补充可执行目标。"
+            suggestions.append(
+                {
+                    "segment_id": seg_id,
+                    "suggested_start": next_start,
+                    "suggested_end": next_end,
+                    "suggested_task": next_task,
+                    "reason": reason,
+                }
+            )
+        return {
+            "used_ai": False,
+            "provider": self._read_ai_settings_raw().get("provider"),
+            "generated_at": _now_utc().isoformat(),
+            "reason": "AI未启用或调用失败，已使用规则建议",
+            "raw_advice": f"已对计划《{title}》生成规则优化建议。",
+            "suggestions": suggestions,
+            "plan_title": title,
+            "prompt_echo": prompt or "",
+        }
+
+    def generate_plan_optimization(self, title: str, segments: list[PlanSegmentInput], prompt: str | None = None) -> dict:
+        normalized_segments = [
+            {"id": s.id, "start": s.start, "end": s.end, "task": s.task}
+            for s in segments
+            if s and s.id and s.start and s.end and s.task
+        ]
+        if not normalized_segments:
+            return self._fallback_plan_optimization(title, [], prompt)
+
+        config = self._read_ai_settings_raw()
+        if not config["enabled"] or not config["api_key"]:
+            return self._fallback_plan_optimization(title, normalized_segments, prompt)
+
+        try:
+            from langchain_core.output_parsers import JsonOutputParser
+            from langchain_core.prompts import ChatPromptTemplate
+            from langchain_openai import ChatOpenAI
+            from pydantic import BaseModel, Field
+            import json
+
+            class SegmentSuggestion(BaseModel):
+                segment_id: str = Field(description="原计划事件ID")
+                suggested_start: str = Field(description="建议开始时间，格式HH:mm")
+                suggested_end: str = Field(description="建议结束时间，格式HH:mm")
+                suggested_task: str = Field(description="建议事件描述")
+                reason: str = Field(description="建议原因，简洁可执行")
+
+            class PlanOptimizeOutput(BaseModel):
+                summary: str = Field(description="一句话总结")
+                suggestions: list[SegmentSuggestion] = Field(description="逐项建议，至少1条")
+
+            llm_kwargs: dict = {
+                "model": config["model"],
+                "api_key": config["api_key"],
+                "temperature": float(config["temperature"]),
+                "max_tokens": int(config["max_tokens"]),
+                "timeout": float(config.get("request_timeout_seconds", 45)),
+            }
+            base_url = (config.get("base_url") or "").strip()
+            if base_url:
+                llm_kwargs["base_url"] = base_url
+
+            llm = ChatOpenAI(**llm_kwargs)
+            parser = JsonOutputParser(pydantic_object=PlanOptimizeOutput)
+            prompt_tmpl = ChatPromptTemplate.from_messages(
+                [
+                    (
+                        "system",
+                        "你是个人计划优化助手。只基于用户给出的计划内容做优化，不要引用番茄钟统计。"
+                        " 输出必须是纯JSON，不要Markdown，不要解释。"
+                        " suggestions 每条都必须给 segment_id、suggested_start、suggested_end、suggested_task、reason。"
+                        " segment_id 必须从输入事件中选择。时间格式HH:mm。"
+                    ),
+                    (
+                        "human",
+                        "计划标题：{title}\n计划事件(JSON)：\n{segments_json}\n用户补充需求：{extra_prompt}\n\n输出格式要求：{format_instructions}",
+                    ),
+                ]
+            )
+            chain = prompt_tmpl | llm | parser
+            output = chain.invoke(
+                {
+                    "title": title,
+                    "segments_json": json.dumps(normalized_segments, ensure_ascii=False, indent=2),
+                    "extra_prompt": (prompt or "无"),
+                    "format_instructions": parser.get_format_instructions(),
+                }
+            )
+            suggestions_raw = output.get("suggestions") if isinstance(output, dict) else []
+            suggestions = []
+            valid_ids = {s["id"] for s in normalized_segments}
+            for item in (suggestions_raw or []):
+                seg_id = str(item.get("segment_id") or "")
+                if seg_id not in valid_ids:
+                    continue
+                start = str(item.get("suggested_start") or "").strip()
+                end = str(item.get("suggested_end") or "").strip()
+                task = str(item.get("suggested_task") or "").strip()
+                reason_text = str(item.get("reason") or "").strip() or "AI建议优化该事件安排。"
+                if not start or not end or not task:
+                    continue
+                suggestions.append(
+                    {
+                        "segment_id": seg_id,
+                        "suggested_start": start,
+                        "suggested_end": end,
+                        "suggested_task": task,
+                        "reason": reason_text,
+                    }
+                )
+
+            if not suggestions:
+                return self._fallback_plan_optimization(title, normalized_segments, prompt)
+
+            return {
+                "used_ai": True,
+                "provider": config["provider"],
+                "generated_at": _now_utc().isoformat(),
+                "reason": "ok",
+                "raw_advice": str(output.get("summary") or "").strip(),
+                "suggestions": suggestions,
+                "plan_title": title,
+                "prompt_echo": prompt or "",
+            }
+        except Exception:
+            return self._fallback_plan_optimization(title, normalized_segments, prompt)
 
     def get_me(self) -> dict:
         with self._conn() as conn:

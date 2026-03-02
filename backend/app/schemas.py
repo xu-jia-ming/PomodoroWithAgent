@@ -99,3 +99,16 @@ class AIConfigUpdate(BaseModel):
 class AIAdviceRequest(BaseModel):
     days: int = Field(default=30, ge=1, le=180)
     prompt: Optional[str] = Field(default=None, max_length=1000)
+
+
+class PlanSegmentInput(BaseModel):
+    id: str = Field(min_length=1, max_length=80)
+    start: str = Field(min_length=1, max_length=5)
+    end: str = Field(min_length=1, max_length=5)
+    task: str = Field(min_length=1, max_length=200)
+
+
+class AIPlanOptimizeRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=100)
+    segments: list[PlanSegmentInput] = Field(default_factory=list, min_length=1, max_length=80)
+    prompt: Optional[str] = Field(default=None, max_length=1000)
