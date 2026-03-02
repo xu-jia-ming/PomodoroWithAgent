@@ -40,15 +40,15 @@
 
     <main class="app-content">
       <TodosView v-if="activeTab === 'todos'" :ui-mode="uiMode" />
-      <CollectionsView v-else-if="activeTab === 'collections'" />
       <StatsView v-else-if="activeTab === 'stats'" />
-      <ProfileView v-else />
+      <ProfileView v-else-if="activeTab === 'profile'" />
+      <ReflectionView v-else />
     </main>
 
     <footer class="tab-footer">
       <el-button text class="nav-btn" :type="activeTab === 'todos' ? 'primary' : ''" @click="activeTab = 'todos'">待办</el-button>
-      <el-button text class="nav-btn" :type="activeTab === 'collections' ? 'primary' : ''" @click="activeTab = 'collections'">未来待办集</el-button>
       <el-button text class="nav-btn" :type="activeTab === 'stats' ? 'primary' : ''" @click="activeTab = 'stats'">统计数据</el-button>
+      <el-button text class="nav-btn" :type="activeTab === 'reflection' ? 'primary' : ''" @click="activeTab = 'reflection'">心流</el-button>
       <el-button text class="nav-btn" :type="activeTab === 'profile' ? 'primary' : ''" @click="activeTab = 'profile'">我的</el-button>
     </footer>
   </div>
@@ -59,9 +59,9 @@
 import { onMounted, ref, watch } from 'vue'
 import { Brush, Check, MoonNight, Sunny } from '@element-plus/icons-vue'
 import TodosView from './views/TodosView.vue'
-import CollectionsView from './views/CollectionsView.vue'
 import StatsView from './views/StatsView.vue'
 import ProfileView from './views/ProfileView.vue'
+import ReflectionView from './views/ReflectionView.vue'
 
 const activeTab = ref('todos')
 const uiOptions = [
