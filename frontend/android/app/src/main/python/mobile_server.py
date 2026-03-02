@@ -2,10 +2,6 @@ import os
 import threading
 import sys
 
-import uvicorn
-
-from main import app
-
 _started = False
 _lock = threading.Lock()
 
@@ -27,6 +23,9 @@ def start_server(files_dir: str) -> bool:
         if os.path.isdir(vendor_dir) and vendor_dir not in sys.path:
             sys.path.insert(0, vendor_dir)
         _started = True
+
+    import uvicorn
+    from main import app
 
     uvicorn.run(
         app,

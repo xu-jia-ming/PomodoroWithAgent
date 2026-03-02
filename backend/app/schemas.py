@@ -110,5 +110,5 @@ class PlanSegmentInput(BaseModel):
 
 class AIPlanOptimizeRequest(BaseModel):
     title: str = Field(min_length=1, max_length=100)
-    segments: list[PlanSegmentInput] = Field(default_factory=list, min_length=1, max_length=80)
+    segments: list[PlanSegmentInput] = Field(default_factory=list, min_items=1, max_items=80)
     prompt: Optional[str] = Field(default=None, max_length=1000)
