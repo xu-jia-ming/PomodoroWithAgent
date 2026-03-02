@@ -13,6 +13,14 @@
     "serve": "vite",
     "build": "vite build",
     "build:backend": "node scripts/build-backend.cjs",
+    "mobile:env:setup": "powershell -ExecutionPolicy Bypass -File scripts/setup-mobile-env.ps1",
+    "mobile:sync-deps": "node scripts/sync-mobile-deps.cjs",
+    "mobile:sync-backend": "node scripts/sync-mobile-backend.cjs",
+    "mobile:sync": "npm run build && npm run mobile:sync-backend && npm run mobile:sync-deps && npx cap sync android",
+    "mobile:open": "npx cap open android",
+    "mobile:build:debug": "cd android && gradlew.bat assembleDebug",
+    "mobile:build:release": "cd android && gradlew.bat assembleRelease",
+    "mobile:bundle:release": "cd android && gradlew.bat bundleRelease",
     "desktop:prepare": "node scripts/prepare-desktop-build.cjs",
     "preview": "vite preview",
     "desktop:dev": "concurrently -k \"npm run dev\" \"wait-on http://127.0.0.1:5173 && electron .\"",
@@ -26,12 +34,15 @@
     "vue-router": "^4.5.0"
   },
   "devDependencies": {
+    "@capacitor/android": "^8.1.0",
+    "@capacitor/cli": "^7.5.0",
+    "@capacitor/core": "^8.1.0",
     "@vitejs/plugin-vue": "^5.2.1",
     "concurrently": "^9.1.2",
     "electron": "^33.2.1",
     "electron-builder": "^25.1.8",
-    "wait-on": "^8.0.1",
-    "vite": "^6.1.0"
+    "vite": "^6.1.0",
+    "wait-on": "^8.0.1"
   },
   "build": {
     "appId": "com.pomodorotable.desktop",

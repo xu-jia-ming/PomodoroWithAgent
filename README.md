@@ -84,6 +84,27 @@ npm run desktop:build
 2. 覆盖 `frontend/public/icon-256.png`，并重新生成 `frontend/build/icon.ico` 与 `frontend/public/favicon.ico`。
 3. 重新执行 `npm run desktop:build`，新的安装包会带上新图标。
 
+## Android 打包（Vue + FastAPI）
+当前建议在 `feature/mobile-packaging` 分支进行 Android 打包，并先并入 Windows 打包能力：
+
+```bash
+git checkout feature/mobile-packaging
+git merge --no-ff feature/windows-packaging
+```
+
+Android 侧采用两层结构：
+- 前端：Vue 构建为静态资源（`frontend/app-dist`），通过 Capacitor 打入 Android 容器。
+- 后端：FastAPI 通过 Android 内嵌 Python 运行时（Chaquopy）在本机 `127.0.0.1:8000` 启动。
+
+在 `frontend` 目录可直接执行：
+
+```bash
+npm run mobile:sync
+npm run mobile:build:debug
+```
+
+完整步骤请参考：`docs/07-Android打包指南.md`。
+
 ## AI Agent 使用说明
 1. 进入应用“我的”页面，找到“AI 助手配置”。
 2. 选择厂商，填写 `Base URL`、`Model`、`API Key` 后保存。
@@ -127,4 +148,5 @@ npm run desktop:build
  - `docs/04-Git规范流程.md`
  - `docs/05-开发与启动指南.md`
  - `docs/06-近期变更记录.md`
+ - `docs/07-Android打包指南.md`
 

@@ -20,6 +20,14 @@ dist/
 frontend/app-dist/
 frontend/release-build/
 frontend/release/
+frontend/android/.gradle/
+frontend/android/build/
+frontend/android/app/build/
+frontend/android/local.properties
+frontend/android/keystore.properties
+frontend/android/keystore/
+frontend/android/app/src/main/python/main.py
+frontend/android/app/src/main/python/app/
 coverage/
 *.tsbuildinfo
 frontend/.vite/

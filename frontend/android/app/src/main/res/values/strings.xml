@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">PomodoroTable</string>
+    <string name="title_activity_main">PomodoroTable</string>
+    <string name="package_name">com.pomodorotable.app</string>
+    <string name="custom_url_scheme">com.pomodorotable.app</string>
+</resources>
