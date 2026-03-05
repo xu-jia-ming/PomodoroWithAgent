@@ -56,7 +56,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref, watch } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Brush, Check, MoonNight, Sunny } from '@element-plus/icons-vue'
 import TodosView from './views/TodosView.vue'
 import StatsView from './views/StatsView.vue'
@@ -254,6 +254,15 @@ const legacyColor = localStorage.getItem('app-bg-color')
 const themeKey = ref(savedTheme || legacyColorThemeMap[legacyColor] || 'calm-gray')
 const darkMode = ref(localStorage.getItem('app-dark-mode') === 'true')
 
+function onTodosSynced() {
+  activeTab.value = 'todos'
+}
+
+function syncDocumentUiMode(value) {
+  document.documentElement.setAttribute('data-ui-mode', value)
+  document.body?.setAttribute('data-ui-mode', value)
+}
+
 function applyTheme(value, isDark) {
   const palette = isDark ? darkThemes : lightThemes
   const theme = palette[value] || palette['calm-gray']
@@ -308,6 +317,7 @@ function applyTheme(value, isDark) {
 
 watch(uiMode, (value) => {
   localStorage.setItem('ui-mode', value)
+  syncDocumentUiMode(value)
 })
 
 watch([themeKey, darkMode], ([themeValue, isDark]) => {
@@ -327,13 +337,21 @@ onMounted(() => {
     appRoot.style.height = '100%'
     appRoot.style.overflow = 'hidden'
   }
+  syncDocumentUiMode(uiMode.value)
+  window.addEventListener('pomodoro:todos-synced', onTodosSynced)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('pomodoro:todos-synced', onTodosSynced)
 })
 </script>
 
 <style scoped>
 .app-wrapper {
-  height: 100%;
-  min-height: 100%;
+  height: 100vh;
+  min-height: 100vh;
+  height: 100dvh;
+  min-height: 100dvh;
   padding: 12px;
   overflow: hidden;
   display: flex;
@@ -382,6 +400,18 @@ onMounted(() => {
   box-shadow:
     0 20px 45px rgba(18, 35, 67, 0.22),
     inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.app-shell.android-mode .app-header {
+  padding: calc(14px + env(safe-area-inset-top, 0px)) 12px 10px;
+}
+
+.app-shell.android-mode .header-main {
+  gap: 8px;
+}
+
+.app-shell.android-mode .header-title h2 {
+  font-size: 20px;
 }
 
 .app-header {
@@ -478,7 +508,7 @@ onMounted(() => {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 8px;
-  padding: 10px 10px calc(10px + env(safe-area-inset-bottom, 0px));
+  padding: 10px 10px calc(16px + env(safe-area-inset-bottom, 0px));
   background: color-mix(in srgb, var(--app-surface-color, #ffffff) 92%, transparent);
   border-top: 1px solid var(--app-border-color, #dbe2ea);
   margin-top: auto;
@@ -514,7 +544,11 @@ onMounted(() => {
 
 @media (max-width: 1024px) {
   .app-wrapper {
-    padding: 0;
+    padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px);
+    height: 100vh;
+    min-height: 100vh;
+    height: 100dvh;
+    min-height: 100dvh;
   }
 
   .app-shell.windows-mode,
@@ -523,8 +557,10 @@ onMounted(() => {
     width: 100%;
     max-width: none;
     height: 100%;
+    height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
     max-height: none;
     min-height: 100%;
+    min-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
     border-radius: 0;
     box-shadow: none;
   }
@@ -539,6 +575,10 @@ onMounted(() => {
 
   .app-content {
     padding: 12px;
+  }
+
+  .app-shell.android-mode .app-header {
+    padding: calc(14px + env(safe-area-inset-top, 0px)) 12px 10px;
   }
 }
 

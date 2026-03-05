@@ -37,3 +37,98 @@ body,
 .el-overlay {
   background-color: var(--el-overlay-color, rgba(0, 0, 0, 0.6)) !important;
 }
+
+html[data-ui-mode='android'] .el-dialog {
+  width: min(420px, calc(100vw - 20px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px))) !important;
+  max-width: min(420px, calc(100vw - 20px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px))) !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+
+body[data-ui-mode='android'] .el-dialog {
+  width: min(420px, calc(100vw - 20px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px))) !important;
+  max-width: min(420px, calc(100vw - 20px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px))) !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+
+html[data-ui-mode='android'] .el-dialog__body {
+  overflow-x: hidden;
+}
+
+body[data-ui-mode='android'] .el-dialog__body {
+  overflow-x: hidden;
+}
+
+html[data-ui-mode='android'] .el-dialog .el-input,
+html[data-ui-mode='android'] .el-dialog .el-input-number,
+html[data-ui-mode='android'] .el-dialog .el-autocomplete,
+html[data-ui-mode='android'] .el-dialog .el-select,
+html[data-ui-mode='android'] .el-dialog .el-date-editor,
+html[data-ui-mode='android'] .el-dialog .el-cascader {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+body[data-ui-mode='android'] .el-dialog .el-input,
+body[data-ui-mode='android'] .el-dialog .el-input-number,
+body[data-ui-mode='android'] .el-dialog .el-autocomplete,
+body[data-ui-mode='android'] .el-dialog .el-select,
+body[data-ui-mode='android'] .el-dialog .el-date-editor,
+body[data-ui-mode='android'] .el-dialog .el-cascader {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+html[data-ui-mode='android'] .el-dialog .segment-row,
+html[data-ui-mode='android'] .el-dialog .sync-map-row {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch !important;
+  gap: 8px;
+}
+
+body[data-ui-mode='android'] .el-dialog .segment-row,
+body[data-ui-mode='android'] .el-dialog .sync-map-row {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch !important;
+  gap: 8px;
+}
+
+html[data-ui-mode='android'] .el-dialog .segment-row > *,
+html[data-ui-mode='android'] .el-dialog .sync-map-row > * {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+}
+
+body[data-ui-mode='android'] .el-dialog .segment-row > *,
+body[data-ui-mode='android'] .el-dialog .sync-map-row > * {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+}
+
+html[data-ui-mode='android'] .el-dialog .segment-row .el-button,
+html[data-ui-mode='android'] .el-dialog .sync-map-row .el-button {
+  width: auto !important;
+  align-self: flex-end;
+}
+
+body[data-ui-mode='android'] .el-dialog .segment-row .el-button,
+body[data-ui-mode='android'] .el-dialog .sync-map-row .el-button {
+  width: auto !important;
+  align-self: flex-end;
+}
+
+html[data-ui-mode='android'] .plan-edit-dialog,
+body[data-ui-mode='android'] .plan-edit-dialog,
+html[data-ui-mode='android'] .long-plan-create-dialog,
+body[data-ui-mode='android'] .long-plan-create-dialog,
+html[data-ui-mode='android'] .todo-edit-dialog,
+body[data-ui-mode='android'] .todo-edit-dialog {
+  max-height: calc(100vh - 16px);
+  display: flex;
+  flex-direction: column;
+}

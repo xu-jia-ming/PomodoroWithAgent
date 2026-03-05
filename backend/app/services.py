@@ -1,6 +1,7 @@
 import sqlite3
 import os
 import sys
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -907,7 +908,7 @@ class SQLiteService:
                 "advice": self._fallback_ai_advice(usage, prompt),
                 "advice_structured": structured,
                 "usage_snapshot": usage,
-                "reason": f"AI调用失败，已降级规则建议：{str(exc)}",
+                "reason": "AI调用失败，已降级规则建议",
             }
 
     def _fallback_plan_optimization(self, title: str, segments: list[dict], prompt: str | None = None) -> dict:
@@ -949,6 +950,144 @@ class SQLiteService:
             "plan_title": title,
             "prompt_echo": prompt or "",
         }
+
+    def _normalize_hhmm(self, value: str) -> str:
+        text = str(value or "").strip()
+        matched = re.match(r"^(\d{1,2}):(\d{2})$", text)
+        if not matched:
+            return ""
+        hour = int(matched.group(1))
+        minute = int(matched.group(2))
+        if hour < 0 or hour > 23 or minute < 0 or minute > 59:
+            return ""
+        return f"{hour:02d}:{minute:02d}"
+
+    def _normalize_generated_segments(self, segments: list[dict]) -> list[dict]:
+        normalized: list[dict] = []
+        for index, item in enumerate(segments[:40]):
+            start = self._normalize_hhmm(item.get("start"))
+            end = self._normalize_hhmm(item.get("end"))
+            task = str(item.get("task") or "").strip()
+            if not start or not end or not task:
+                continue
+            normalized.append(
+                {
+                    "id": str(item.get("id") or f"seg-{index + 1}"),
+                    "start": start,
+                    "end": end,
+                    "task": task,
+                }
+            )
+        return normalized
+
+    def _fallback_plan_schedule(self, goal: str, days: int, prompt: str | None = None) -> dict:
+        core_goal = str(goal or "").strip() or "阶段学习目标"
+        segments = [
+            {"id": "seg-1", "start": "07:30", "end": "08:00", "task": "晨间回顾今日目标与关键任务"},
+            {"id": "seg-2", "start": "09:00", "end": "10:30", "task": f"核心学习：{core_goal}（理论输入）"},
+            {"id": "seg-3", "start": "10:45", "end": "12:00", "task": f"动手练习：围绕{core_goal}完成最小Demo"},
+            {"id": "seg-4", "start": "14:00", "end": "15:30", "task": "项目实战：实现一个可运行功能并记录问题"},
+            {"id": "seg-5", "start": "16:00", "end": "17:00", "task": "查漏补缺：修复问题并整理知识卡片"},
+            {"id": "seg-6", "start": "20:00", "end": "20:30", "task": "当日复盘：记录进展、阻塞点、次日调整"},
+            {"id": "seg-7", "start": "21:00", "end": "21:30", "task": "轻量预习：阅读明日学习材料"},
+        ]
+        return {
+            "used_ai": False,
+            "provider": self._read_ai_settings_raw().get("provider"),
+            "generated_at": _now_utc().isoformat(),
+            "reason": "AI未启用或调用失败，已使用规则计划模板",
+            "plan": {
+                "title": f"{core_goal}-30天学习计划",
+                "note": f"按天执行固定节奏，围绕目标持续迭代，周期 {days} 天。",
+                "review": "每日20:00复盘；每周末复盘本周产出并调整下周任务。",
+                "segments": segments,
+            },
+            "prompt_echo": prompt or "",
+        }
+
+    def generate_plan_schedule(self, goal: str, days: int = 30, prompt: str | None = None) -> dict:
+        normalized_goal = str(goal or "").strip()
+        if not normalized_goal:
+            return self._fallback_plan_schedule("阶段学习目标", days, prompt)
+
+        config = self._read_ai_settings_raw()
+        if not config["enabled"] or not config["api_key"]:
+            return self._fallback_plan_schedule(normalized_goal, days, prompt)
+
+        try:
+            from langchain_core.output_parsers import JsonOutputParser
+            from langchain_core.prompts import ChatPromptTemplate
+            from langchain_openai import ChatOpenAI
+            from pydantic import BaseModel, Field
+
+            class PlanGenerateSegment(BaseModel):
+                start: str = Field(description="开始时间，格式HH:mm")
+                end: str = Field(description="结束时间，格式HH:mm")
+                task: str = Field(description="可执行任务描述")
+
+            class PlanGenerateOutput(BaseModel):
+                title: str = Field(description="计划标题")
+                note: str = Field(description="计划说明")
+                review: str = Field(description="复盘节奏")
+                segments: list[PlanGenerateSegment] = Field(description="时间段计划，至少6条")
+
+            llm_kwargs: dict = {
+                "model": config["model"],
+                "api_key": config["api_key"],
+                "temperature": float(config["temperature"]),
+                "max_tokens": int(config["max_tokens"]),
+                "timeout": float(config.get("request_timeout_seconds", 45)),
+            }
+            base_url = (config.get("base_url") or "").strip()
+            if base_url:
+                llm_kwargs["base_url"] = base_url
+
+            llm = ChatOpenAI(**llm_kwargs)
+            parser = JsonOutputParser(pydantic_object=PlanGenerateOutput)
+            prompt_tmpl = ChatPromptTemplate.from_messages(
+                [
+                    (
+                        "system",
+                        "你是学习计划制定助手。只根据用户目标生成计划，不要引用番茄钟统计。"
+                        " 输出必须是纯JSON，不要Markdown，不要解释。"
+                        " segments 至少6条，时间必须是HH:mm，任务必须具体可执行。"
+                        " 计划中必须包含至少1条复盘任务。"
+                    ),
+                    (
+                        "human",
+                        "用户目标：{goal}\n计划周期(天)：{days}\n补充约束：{extra_prompt}\n\n输出格式要求：{format_instructions}",
+                    ),
+                ]
+            )
+            chain = prompt_tmpl | llm | parser
+            output = chain.invoke(
+                {
+                    "goal": normalized_goal,
+                    "days": int(days or 30),
+                    "extra_prompt": (prompt or "无"),
+                    "format_instructions": parser.get_format_instructions(),
+                }
+            )
+            segments_raw = output.get("segments") if isinstance(output, dict) else []
+            segments = self._normalize_generated_segments(segments_raw or [])
+            if len(segments) < 3:
+                return self._fallback_plan_schedule(normalized_goal, days, prompt)
+
+            return {
+                "used_ai": True,
+                "provider": config["provider"],
+                "generated_at": _now_utc().isoformat(),
+                "reason": "ok",
+                "plan": {
+                    "title": str(output.get("title") or f"{normalized_goal}-学习计划").strip(),
+                    "note": str(output.get("note") or "").strip(),
+                    "review": str(output.get("review") or "").strip(),
+                    "segments": segments,
+                },
+                "prompt_echo": prompt or "",
+            }
+        except Exception:
+            return self._fallback_plan_schedule(normalized_goal, days, prompt)
 
     def generate_plan_optimization(self, title: str, segments: list[PlanSegmentInput], prompt: str | None = None) -> dict:
         normalized_segments = [

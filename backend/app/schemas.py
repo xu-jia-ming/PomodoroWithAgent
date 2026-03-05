@@ -112,3 +112,9 @@ class AIPlanOptimizeRequest(BaseModel):
     title: str = Field(min_length=1, max_length=100)
     segments: list[PlanSegmentInput] = Field(default_factory=list, min_items=1, max_items=80)
     prompt: Optional[str] = Field(default=None, max_length=1000)
+
+
+class AIPlanGenerateRequest(BaseModel):
+    goal: str = Field(min_length=1, max_length=300)
+    days: int = Field(default=30, ge=1, le=180)
+    prompt: Optional[str] = Field(default=None, max_length=1000)

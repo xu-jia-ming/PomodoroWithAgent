@@ -68,6 +68,9 @@
                 <el-button text type="primary" @click="openCardAiDialog(card)">AI</el-button>
                 <el-button text type="danger" @click="onDeleteCard(card)">删除</el-button>
               </template>
+              <template v-else>
+                <el-button text type="danger" @click="onDeleteCard(card)">删除</el-button>
+              </template>
             </div>
           </div>
         </template>
@@ -102,7 +105,13 @@
       </el-card>
     </div>
 
-    <el-dialog v-model="todoDialogVisible" :title="todoDialogMode === 'create' ? '新增待办' : '修改待办'" width="420">
+    <el-dialog
+      v-model="todoDialogVisible"
+      :title="todoDialogMode === 'create' ? '新增待办' : '修改待办'"
+      width="min(420px, 92vw)"
+      custom-class="todo-edit-dialog"
+      top="4vh"
+    >
       <el-form label-width="92px">
         <el-form-item label="标题">
           <el-input v-model="dialogTitle" />
@@ -141,7 +150,13 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="cardDialogVisible" title="修改待办卡片" width="360">
+    <el-dialog
+      v-model="cardDialogVisible"
+      title="修改待办卡片"
+      width="min(360px, 92vw)"
+      custom-class="card-edit-dialog"
+      top="4vh"
+    >
       <el-form label-width="72px">
         <el-form-item label="名称">
           <el-input v-model="cardDialogName" />
@@ -307,6 +322,9 @@ const cardDialogId = ref(null)
 const cardDialogName = ref('')
 const expandedCardKeys = ref([])
 let timerRef = null
+let timerStartedAtMs = null
+let timerStartSeconds = 0
+let finishingByTimer = false
 const isWindowsUi = computed(() => props.uiMode === 'windows')
 
 const cardGroups = computed(() => {
@@ -637,6 +655,19 @@ function getCompletionMinutes() {
   return Math.max(1, Math.ceil(elapsedSeconds / 60))
 }
 
+function syncTimerByRealElapsed() {
+  if (!isRunning.value || timerStartedAtMs == null) {
+    return false
+  }
+  const elapsedSeconds = Math.max(0, Math.floor((Date.now() - timerStartedAtMs) / 1000))
+  if (shouldCountDown.value) {
+    currentSeconds.value = Math.max(timerStartSeconds - elapsedSeconds, 0)
+    return currentSeconds.value <= 0
+  }
+  currentSeconds.value = timerStartSeconds + elapsedSeconds
+  return false
+}
+
 async function finishPomodoro(successMessage) {
   pauseTimer()
   if (phase.value === 'focus') {
@@ -694,16 +725,22 @@ function startTimer() {
   }
 
   isRunning.value = true
+  timerStartedAtMs = Date.now()
+  timerStartSeconds = currentSeconds.value
   timerRef = setInterval(async () => {
-    if (shouldCountDown.value) {
-      if (currentSeconds.value <= 0) {
-        await finishPomodoro('番茄钟完成，已记录到统计数据')
+    const finished = syncTimerByRealElapsed()
+    if (finished) {
+      if (finishingByTimer) {
         return
       }
-      currentSeconds.value -= 1
+      finishingByTimer = true
+      try {
+        await finishPomodoro('番茄钟完成，已记录到统计数据')
+      } finally {
+        finishingByTimer = false
+      }
       return
     }
-    currentSeconds.value += 1
   }, 1000)
 }
 
@@ -721,10 +758,13 @@ function exitFocusScreen() {
 }
 
 function pauseTimer() {
+  syncTimerByRealElapsed()
   if (timerRef) {
     clearInterval(timerRef)
     timerRef = null
   }
+  timerStartedAtMs = null
+  timerStartSeconds = currentSeconds.value
   isRunning.value = false
 }
 
@@ -754,6 +794,20 @@ function executeTodo(todo) {
   focusScreenVisible.value = true
   resetTimer()
   startTimer()
+}
+
+async function onTodosSynced(event) {
+  await loadData()
+  const todoIds = Array.isArray(event?.detail?.todoIds) ? event.detail.todoIds : []
+  if (!todoIds.length) {
+    return
+  }
+  const found = todos.value.find((item) => todoIds.includes(item.id))
+  if (!found) {
+    return
+  }
+  currentTodoId.value = found.id
+  currentTodoTitle.value = found.title
 }
 
 function openEdit(todo) {
@@ -845,6 +899,40 @@ async function onCardDialogSave() {
 }
 
 async function onDeleteCard(card) {
+  if (card.id == null) {
+    if (!Array.isArray(card.items) || !card.items.length) {
+      ElMessage.info('未分配卡片暂无待办可删除')
+      return
+    }
+
+    try {
+      await ElMessageBox.confirm(
+        `确认删除未分配卡片下全部待办吗？共 ${card.items.length} 条，该操作不可恢复。`,
+        '删除确认',
+        {
+          type: 'warning',
+          confirmButtonText: '确认',
+          cancelButtonText: '取消'
+        }
+      )
+    } catch {
+      return
+    }
+
+    const idSet = new Set(card.items.map((item) => item.id))
+    await Promise.all(card.items.map((item) => deleteTodo(item.id)))
+
+    if (currentTodoId.value != null && idSet.has(currentTodoId.value)) {
+      currentTodoId.value = null
+      currentTodoTitle.value = ''
+      resetTimer()
+    }
+
+    await loadData()
+    ElMessage.success(`已删除未分配卡片中的 ${card.items.length} 条待办`)
+    return
+  }
+
   try {
     await ElMessageBox.confirm('确认删除该待办卡片吗？卡片中的待办会变为未分配。', '删除确认', {
       type: 'warning',
@@ -862,6 +950,7 @@ onMounted(async () => {
   phase.value = 'focus'
   resetClockByMode()
   document.addEventListener('fullscreenchange', onFullscreenChange)
+  window.addEventListener('pomodoro:todos-synced', onTodosSynced)
   await loadData()
 })
 
@@ -870,6 +959,7 @@ onBeforeUnmount(() => {
     clearInterval(timerRef)
   }
   document.removeEventListener('fullscreenchange', onFullscreenChange)
+  window.removeEventListener('pomodoro:todos-synced', onTodosSynced)
   document.body.style.overflow = ''
   void exitFullscreenMode()
 })
@@ -1095,5 +1185,37 @@ onBeforeUnmount(() => {
 
 .todo-group-card.todo-group-card-collapsed :deep(.el-card__body) {
   display: none;
+}
+
+:deep(.todo-edit-dialog) {
+  width: min(420px, calc(100vw - 24px)) !important;
+}
+
+:deep(.card-edit-dialog) {
+  width: min(360px, calc(100vw - 24px)) !important;
+}
+
+@media (max-width: 768px) {
+  :deep(.todo-edit-dialog) {
+    margin: 0 auto !important;
+    max-height: calc(100vh - 16px);
+    display: flex;
+    flex-direction: column;
+  }
+
+  :deep(.todo-edit-dialog .el-dialog__body) {
+    overflow-y: auto;
+  }
+
+  :deep(.card-edit-dialog) {
+    margin: 0 auto !important;
+    max-height: calc(100vh - 16px);
+    display: flex;
+    flex-direction: column;
+  }
+
+  :deep(.card-edit-dialog .el-dialog__body) {
+    overflow-y: auto;
+  }
 }
 </style>

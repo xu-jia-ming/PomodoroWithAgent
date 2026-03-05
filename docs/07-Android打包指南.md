@@ -107,6 +107,7 @@ npm run mobile:open
 命令行方式（在 `frontend/`）：
 
 ```bash
+npm run mobile:sync
 npm run mobile:build:debug
 npm run mobile:build:release
 npm run mobile:bundle:release

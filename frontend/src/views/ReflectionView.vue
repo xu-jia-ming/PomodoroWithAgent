@@ -49,8 +49,8 @@
       <el-form @submit.prevent>
         <el-form-item label="计划类型">
           <el-radio-group v-model="planKind">
-            <el-radio-button label="short">短期计划</el-radio-button>
-            <el-radio-button label="long">长期计划</el-radio-button>
+            <el-radio-button value="short">短期计划</el-radio-button>
+            <el-radio-button value="long">长期计划</el-radio-button>
           </el-radio-group>
         </el-form-item>
         <el-form-item label="卡片名字">
@@ -92,6 +92,7 @@
           <el-form-item>
             <div class="inline-actions">
               <el-button type="primary" @click="openLongPlanCreateDialog">添加长期计划</el-button>
+              <el-button :loading="aiPlanning" @click="openAiPlanDialog">AI制定计划</el-button>
             </div>
           </el-form-item>
           <el-alert
@@ -225,6 +226,7 @@
         ? (planEditKind === 'long' ? '复制长期计划' : '复制短期计划')
         : (planEditKind === 'long' ? '修改长期计划' : '修改短期计划')"
       width="620px"
+      custom-class="plan-edit-dialog"
     >
       <template v-if="planEditKind === 'short'">
         <el-form @submit.prevent>
@@ -265,12 +267,12 @@
                 range-separator="至"
                 start-placeholder="开始"
                 end-placeholder="结束"
-                style="width: 240px;"
+                style="width: min(240px, 100%);"
               />
               <el-input
                 v-model="segment.task"
                 placeholder="这段时间做什么事"
-                style="flex: 1; min-width: 180px;"
+                style="flex: 1; min-width: 0;"
               />
               <el-button text type="danger" @click="removeEditLongSegment(index)">删除</el-button>
             </div>
@@ -284,7 +286,13 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="syncDialogVisible" title="选择计划同步到待办" width="680px">
+    <el-dialog
+      v-model="syncDialogVisible"
+      title="选择计划同步到待办"
+      width="min(680px, calc(100vw - 24px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)))"
+      custom-class="sync-plan-dialog"
+      top="max(8px, env(safe-area-inset-top, 0px))"
+    >
       <el-alert
         type="info"
         :closable="false"
@@ -325,8 +333,8 @@
         >
           <div class="sync-map-row">
             <el-radio-group v-model="getSyncCardMapping(card.id).targetMode">
-              <el-radio-button label="existing">现有卡片</el-radio-button>
-              <el-radio-button label="new">新建卡片</el-radio-button>
+              <el-radio-button value="existing">现有卡片</el-radio-button>
+              <el-radio-button value="new">新建卡片</el-radio-button>
             </el-radio-group>
             <el-select
               v-if="getSyncCardMapping(card.id).targetMode === 'existing'"
@@ -407,10 +415,16 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="longPlanCreateDialogVisible" title="添加长期计划" width="720px">
+    <el-dialog
+      v-model="longPlanCreateDialogVisible"
+      title="添加长期计划"
+      width="min(720px, calc(100vw - 24px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)))"
+      custom-class="long-plan-create-dialog"
+      top="max(8px, env(safe-area-inset-top, 0px))"
+    >
       <el-form @submit.prevent>
         <el-form-item label="卡片名字">
-          <el-input v-model="planCardNameDraft" placeholder="输入计划卡片名字（不存在会自动新建）" style="width: 320px;" />
+          <el-input v-model="planCardNameDraft" placeholder="输入计划卡片名字（不存在会自动新建）" style="width: 100%; max-width: 320px;" />
         </el-form-item>
         <div class="segment-list">
           <div v-for="(segment, index) in longPlanSegmentsDraft" :key="segment.key" class="segment-row">
@@ -422,12 +436,12 @@
               range-separator="至"
               start-placeholder="开始"
               end-placeholder="结束"
-              style="width: 240px;"
+              style="width: min(240px, 100%);"
             />
             <el-input
               v-model="segment.task"
               placeholder="这段时间做什么事"
-              style="flex: 1; min-width: 180px;"
+              style="flex: 1; min-width: 160px;"
             />
             <el-button text type="danger" @click="removeLongSegmentDraft(index)">删除</el-button>
           </div>
@@ -437,6 +451,55 @@
       <template #footer>
         <el-button @click="longPlanCreateDialogVisible = false">取消</el-button>
         <el-button type="primary" @click="addLongPlan">保存长期计划</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="aiPlanDialogVisible"
+      title="AI制定计划"
+      width="min(760px, calc(100vw - 24px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)))"
+      custom-class="ai-plan-dialog"
+      top="max(8px, env(safe-area-inset-top, 0px))"
+    >
+      <el-form @submit.prevent>
+        <el-form-item label="计划卡片">
+          <el-input v-model="planCardNameDraft" placeholder="输入计划卡片名字（不存在会自动新建）" />
+        </el-form-item>
+        <el-form-item label="目标描述">
+          <el-input
+            v-model="aiPlanGoalDraft"
+            type="textarea"
+            :rows="5"
+            placeholder="例如：我这个月要学会 Agent 应用开发，希望 AI 给出每天时间段安排和每周复盘节奏。"
+          />
+        </el-form-item>
+        <el-form-item label="计划周期(天)">
+          <el-input-number v-model="aiPlanDays" :min="7" :max="90" />
+        </el-form-item>
+        <el-form-item label="补充约束">
+          <el-input
+            v-model="aiPlanExtraDraft"
+            type="textarea"
+            :rows="3"
+            placeholder="可选：例如工作日 20:00-23:00 学习，周末上午复盘。"
+          />
+        </el-form-item>
+      </el-form>
+      <el-divider content-position="left">预览结果</el-divider>
+      <el-empty v-if="!aiPlanPreviewSegments.length" description="先点击“生成预览”，再确认保存" />
+      <div v-else class="ai-plan-preview">
+        <div class="plan-title">{{ aiPlanPreviewTitle }}</div>
+        <div v-if="aiPlanPreviewNote" class="plan-meta">{{ aiPlanPreviewNote }}</div>
+        <div class="time-grid">
+          <span v-for="segment in aiPlanPreviewSegments" :key="`ai-preview-${segment.id}`">
+            {{ segment.start }} - {{ segment.end }}：{{ segment.task }}
+          </span>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="aiPlanDialogVisible = false">取消</el-button>
+        <el-button type="primary" plain :loading="aiPlanning" @click="generateLongPlanByAi">生成预览</el-button>
+        <el-button type="primary" :disabled="!aiPlanPreviewSegments.length" @click="saveAiPlanPreview">保存到计划列表</el-button>
       </template>
     </el-dialog>
 
@@ -477,7 +540,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { ArrowDown, ArrowRight, CopyDocument, Delete, EditPen, MagicStick } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { createCollection, createTodo, fetchCollections, generateAiAdvice, optimizeAiPlan } from '../api/pomodoro'
+import { createCollection, createTodo, fetchCollections, generateAiAdvice, generateAiPlan, optimizeAiPlan } from '../api/pomodoro'
 
 const REFLECTION_STORAGE_KEY = 'pomodoro-reflections-v1'
 const PLAN_STORAGE_KEY = 'pomodoro-plans-v2'
@@ -499,6 +562,14 @@ const shortNoteExpanded = ref(false)
 
 const longPlanSegmentsDraft = ref([])
 const longPlanCreateDialogVisible = ref(false)
+const aiPlanDialogVisible = ref(false)
+const aiPlanGoalDraft = ref('')
+const aiPlanExtraDraft = ref('')
+const aiPlanDays = ref(30)
+const aiPlanning = ref(false)
+const aiPlanPreviewTitle = ref('')
+const aiPlanPreviewNote = ref('')
+const aiPlanPreviewSegments = ref([])
 
 const plans = ref([])
 const planEditDialogVisible = ref(false)
@@ -775,6 +846,156 @@ function normalizePlanSegments(segments) {
       return { id, start, end, task }
     })
     .filter(Boolean)
+}
+
+function parseAiPlanJsonPayload(rawText) {
+  const text = String(rawText || '').trim()
+  if (!text) {
+    return null
+  }
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)
+  const candidate = fenced?.[1]?.trim() || text
+  try {
+    return JSON.parse(candidate)
+  } catch {
+  }
+  const objMatch = candidate.match(/\{[\s\S]*\}/)
+  if (!objMatch) {
+    return null
+  }
+  try {
+    return JSON.parse(objMatch[0])
+  } catch {
+    return null
+  }
+}
+
+function toAiPlanSegments(items) {
+  if (!Array.isArray(items)) {
+    return []
+  }
+  return normalizePlanSegments(
+    items.map((item) => ({
+      start: item?.start ?? item?.from ?? item?.begin ?? item?.start_time ?? item?.startTime ?? '',
+      end: item?.end ?? item?.to ?? item?.finish ?? item?.end_time ?? item?.endTime ?? '',
+      task: item?.task ?? item?.activity ?? item?.content ?? item?.title ?? item?.action ?? ''
+    }))
+  )
+}
+
+function normalizeHmText(input) {
+  const text = String(input || '').replace('：', ':').trim()
+  console.log(text)
+  const match = /^(\d{1,2}):(\d{2})$/.exec(text)
+  if (!match) {
+    return ''
+  }
+  const hh = Number(match[1])
+  const mm = Number(match[2])
+  if (!Number.isInteger(hh) || !Number.isInteger(mm) || hh < 0 || hh > 23 || mm < 0 || mm > 59) {
+    return ''
+  }
+  return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
+}
+
+function extractSegmentsFromPlainText(rawText) {
+  const lines = String(rawText || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+  const items = []
+  const pattern = /(\d{1,2}[:：]\d{2})\s*(?:-|~|—|–|到|至)\s*(\d{1,2}[:：]\d{2})\s*[:：]?\s*(.+)/
+  for (const line of lines) {
+    const cleaned = line.replace(/^[\-\*\d\.\)\(、\s]+/, '')
+    const matched = pattern.exec(cleaned)
+    if (!matched) {
+      continue
+    }
+    const start = normalizeHmText(matched[1])
+    const end = normalizeHmText(matched[2])
+    const task = String(matched[3] || '').trim()
+    if (!start || !end || !task) {
+      continue
+    }
+    items.push({ start, end, task })
+  }
+  return normalizePlanSegments(items)
+}
+
+function extractAiLongPlanResult(rawText) {
+  const parsed = parseAiPlanJsonPayload(rawText)
+  console.log('Parsed AI Plan:', rawText, parsed)
+  if (!parsed || typeof parsed !== 'object') {
+    const fallbackSegments = extractSegmentsFromPlainText(rawText)
+    if (!fallbackSegments.length) {
+      return null
+    }
+    return {
+      title: 'AI生成计划',
+      note: '已按文本结果自动解析时间段。',
+      segments: fallbackSegments
+    }
+  }
+
+  const container = parsed.plan && typeof parsed.plan === 'object' ? parsed.plan : parsed
+  const segments = toAiPlanSegments(
+    container.segments
+      ?? container.daily_segments
+      ?? container.dailySchedule
+      ?? container.daily_schedule
+      ?? container.schedule
+      ?? container.time_blocks
+  )
+  const title = String(container.title || container.plan_title || '').trim()
+  const review = String(container.review || container.review_plan || container.review_cycle || '').trim()
+  const note = String(container.note || container.summary || '').trim()
+  if (!segments.length) {
+    const fallbackSegments = extractSegmentsFromPlainText(rawText)
+    if (fallbackSegments.length) {
+      return {
+        title: title || 'AI生成计划',
+        note: [note, review ? `复盘节奏：${review}` : '', '已按文本结果自动解析时间段。'].filter(Boolean).join('\n'),
+        segments: fallbackSegments
+      }
+    }
+  }
+  return {
+    title,
+    note: [note, review ? `复盘节奏：${review}` : ''].filter(Boolean).join('\n'),
+    segments
+  }
+}
+
+function createLongPlanEntry({ cardName, title, note, segments, successMessage }) {
+  const nextCardName = String(cardName || '').trim()
+  const planCardId = ensurePlanCardIdByName(nextCardName)
+  const normalizedSegments = normalizePlanSegments(segments)
+  if (!nextCardName || !planCardId) {
+    ElMessage.warning('请输入计划卡片名字')
+    return false
+  }
+  if (!hasLongSegments(normalizedSegments)) {
+    ElMessage.warning('请至少添加一条“时间段 + 事项”')
+    return false
+  }
+
+  const now = new Date()
+  plans.value.unshift({
+    id: `${now.getTime()}-${Math.random().toString(16).slice(2, 8)}`,
+    planType: 'long',
+    planCardId,
+    title: String(title || nextCardName).trim() || nextCardName,
+    note: String(note || '').trim(),
+    shortDates: [],
+    longRoutine: {
+      segments: normalizedSegments
+    },
+    done: false,
+    createdAt: now.toISOString()
+  })
+  savePlans()
+  ElMessage.success(successMessage || '长期计划已添加')
+  return true
 }
 
 function convertLegacyRoutineToSegments(routine) {
@@ -1296,14 +1517,24 @@ async function syncSelectedPlansToTodos() {
       collectionIdByPlanCard[String(planCardId)] = collectionId
     }
 
-    await Promise.all(
-      todoPayloads.map((entry) =>
-        createTodo({
+    const createdTodoIds = (await Promise.all(
+      todoPayloads.map(async (entry) => {
+        const res = await createTodo({
           ...entry.payload,
           collection_id: collectionIdByPlanCard[String(entry.planCardId)] ?? null
         })
-      )
-    )
+        return res?.data?.id ?? null
+      })
+    )).filter((id) => id != null)
+
+    window.dispatchEvent(new CustomEvent('pomodoro:todos-synced', {
+      detail: {
+        todoIds: createdTodoIds,
+        count: todoPayloads.length,
+        source: 'reflection'
+      }
+    }))
+
     syncDialogVisible.value = false
     ElMessage.success(`已同步 ${todoPayloads.length} 条待办`)
   } finally {
@@ -1388,9 +1619,21 @@ function openLongPlanCreateDialog() {
   longPlanCreateDialogVisible.value = true
 }
 
+function openAiPlanDialog() {
+  if (!planCardNameDraft.value && planCards.value.length) {
+    planCardNameDraft.value = planCards.value[0].name
+  }
+  aiPlanGoalDraft.value = ''
+  aiPlanExtraDraft.value = ''
+  aiPlanDays.value = 30
+  aiPlanPreviewTitle.value = ''
+  aiPlanPreviewNote.value = ''
+  aiPlanPreviewSegments.value = []
+  aiPlanDialogVisible.value = true
+}
+
 function addLongPlan() {
   const cardName = planCardNameDraft.value.trim()
-  const planCardId = ensurePlanCardIdByName(cardName)
   const segments = normalizePlanSegments(
     longPlanSegmentsDraft.value.map((item) => {
       const start = Array.isArray(item.timeRange) && item.timeRange.length === 2 ? item.timeRange[0] : ''
@@ -1402,34 +1645,84 @@ function addLongPlan() {
       }
     })
   )
+  const created = createLongPlanEntry({
+    cardName,
+    title: cardName,
+    note: '',
+    segments,
+    successMessage: '长期计划已添加'
+  })
+  if (!created) {
+    return
+  }
+  longPlanSegmentsDraft.value = []
+  longPlanCreateDialogVisible.value = false
+}
 
-  if (!cardName || !planCardId) {
+async function generateLongPlanByAi() {
+  const goal = aiPlanGoalDraft.value.trim()
+  const cardName = planCardNameDraft.value.trim()
+  if (!cardName) {
     ElMessage.warning('请输入计划卡片名字')
     return
   }
-  if (!hasLongSegments(segments)) {
-    ElMessage.warning('请至少添加一条“时间段 + 事项”')
+  if (!goal) {
+    ElMessage.warning('请先输入目标描述')
     return
   }
 
-  const now = new Date()
-  plans.value.unshift({
-    id: `${now.getTime()}-${Math.random().toString(16).slice(2, 8)}`,
-    planType: 'long',
-    planCardId,
-    title: cardName,
-    note: '',
-    shortDates: [],
-    longRoutine: {
-      segments
-    },
-    done: false,
-    createdAt: now.toISOString()
+  aiPlanning.value = true
+  try {
+    aiPlanPreviewTitle.value = ''
+    aiPlanPreviewNote.value = ''
+    aiPlanPreviewSegments.value = []
+    const extra = aiPlanExtraDraft.value.trim()
+    const res = await generateAiPlan({
+      goal,
+      days: aiPlanDays.value,
+      prompt: extra || null
+    })
+    const plan = res?.data?.plan || null
+    const planSegments = normalizePlanSegments(Array.isArray(plan?.segments) ? plan.segments : [])
+    if (plan && planSegments.length) {
+      const note = [String(plan.note || '').trim(), String(plan.review || '').trim() ? `复盘节奏：${String(plan.review || '').trim()}` : '']
+        .filter(Boolean)
+        .join('\n')
+      aiPlanPreviewTitle.value = String(plan.title || '').trim() || `${goal.slice(0, 18)}计划`
+      aiPlanPreviewNote.value = note || `目标：${goal}`
+      aiPlanPreviewSegments.value = planSegments
+      ElMessage.success(`已生成预览（${planSegments.length}条时间计划）`)
+      return
+    }
+
+    const adviceText = String(res?.data?.advice || '').trim()
+    const parsed = extractAiLongPlanResult(adviceText)
+    if (!parsed || !parsed.segments.length) {
+      ElMessage.warning('AI 返回内容未识别为可用计划，请补充更明确目标后重试')
+      return
+    }
+    aiPlanPreviewTitle.value = parsed.title || `${goal.slice(0, 18)}计划`
+    aiPlanPreviewNote.value = parsed.note || `目标：${goal}`
+    aiPlanPreviewSegments.value = parsed.segments
+    ElMessage.success(`已生成预览（${parsed.segments.length}条时间计划）`)
+  } finally {
+    aiPlanning.value = false
+  }
+}
+
+function saveAiPlanPreview() {
+  const cardName = planCardNameDraft.value.trim()
+  const created = createLongPlanEntry({
+    cardName,
+    title: aiPlanPreviewTitle.value,
+    note: aiPlanPreviewNote.value,
+    segments: aiPlanPreviewSegments.value,
+    successMessage: 'AI 计划已保存到计划列表'
   })
-  savePlans()
-  longPlanSegmentsDraft.value = []
-  longPlanCreateDialogVisible.value = false
-  ElMessage.success('长期计划已添加')
+  if (!created) {
+    return
+  }
+  aiPlanDialogVisible.value = false
 }
 
 function normalizePlanItem(item) {
@@ -1556,6 +1849,7 @@ async function renamePlanCard(card) {
     promptResult = await ElMessageBox.prompt('请输入新的计划卡片名称', '修改卡片名', {
       confirmButtonText: '保存',
       cancelButtonText: '取消',
+      customClass: 'plan-card-rename-dialog',
       inputValue: oldName,
       inputValidator: (value) => {
         const nextName = String(value || '').trim()
@@ -1811,12 +2105,16 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  min-width: 0;
 }
 
 .record-actions {
   display: flex;
   align-items: center;
   gap: 2px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  min-width: 0;
 }
 
 .plan-item-actions {
@@ -1934,6 +2232,7 @@ onMounted(() => {
   margin-bottom: 8px;
   color: var(--app-text-muted-color, #5f6b7a);
   font-size: 13px;
+  min-width: 0;
 }
 
 .meta-label {
@@ -1950,6 +2249,12 @@ onMounted(() => {
   display: grid;
   grid-template-columns: 1fr;
   gap: 3px;
+}
+
+.time-grid > span {
+  display: block;
+  white-space: normal;
+  word-break: break-word;
 }
 
 .sync-checklist {
@@ -2001,12 +2306,276 @@ onMounted(() => {
 }
 
 .long-segment-checks :deep(.el-checkbox) {
-  align-items: flex-start;
+  display: grid !important;
+  grid-template-columns: 18px 1fr;
+  column-gap: 8px;
+  align-items: start !important;
+  width: 100%;
+  margin-right: 0;
+  margin-bottom: 8px;
+  white-space: normal;
 }
 
 .long-segment-checks :deep(.el-checkbox__label) {
+  display: block;
+  flex: 1;
+  min-width: 0;
   line-height: 1.5;
   white-space: normal;
   word-break: break-word;
+  overflow-wrap: anywhere;
+  padding-left: 0 !important;
+}
+
+:deep(.sync-plan-dialog .long-segment-checks .el-checkbox__input) {
+  margin-top: 2px;
+}
+
+:deep(.sync-plan-dialog .long-segment-checks .el-checkbox__label) {
+  color: var(--app-text-color, #1f2d3d);
+}
+
+:deep(.sync-plan-dialog .long-segment-checks .is-checked + .el-checkbox__label) {
+  color: var(--app-text-color, #1f2d3d);
+}
+
+:deep(.sync-plan-dialog .long-segment-checks .el-checkbox) {
+  height: auto !important;
+  min-height: 30px;
+  white-space: normal !important;
+  line-height: 1.6 !important;
+}
+
+:deep(.sync-plan-dialog .long-segment-checks .el-checkbox__input) {
+  flex: 0 0 auto;
+  width: 18px;
+  min-width: 18px;
+}
+
+:deep(.sync-plan-dialog .long-segment-checks .el-checkbox__label) {
+  white-space: normal !important;
+  line-height: 1.6 !important;
+  font-size: 15px;
+}
+
+:deep(.sync-plan-dialog .long-segment-checks .el-checkbox:last-child) {
+  margin-bottom: 0;
+}
+
+:deep(.long-plan-create-dialog) {
+  width: min(720px, calc(100vw - 24px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px))) !important;
+}
+
+:deep(.plan-edit-dialog) {
+  width: min(620px, calc(100vw - 24px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px))) !important;
+}
+
+:deep(.sync-plan-dialog) {
+  width: min(680px, calc(100vw - 24px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px))) !important;
+}
+
+:deep(.plan-card-rename-dialog) {
+  width: min(420px, calc(100vw - 24px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px))) !important;
+}
+
+:deep(.ai-plan-dialog) {
+  width: min(760px, calc(100vw - 24px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px))) !important;
+}
+
+:deep(.plan-edit-dialog .segment-row) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+:deep(.plan-edit-dialog .segment-row .el-date-editor),
+:deep(.plan-edit-dialog .segment-row .el-input) {
+  min-width: 0;
+}
+
+@media (max-width: 768px) {
+  .plan-list-head {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .inline-actions {
+    width: 100%;
+  }
+
+  .inline-actions :deep(.el-button) {
+    flex: 1 1 calc(50% - 8px);
+    min-width: 0;
+  }
+
+  .record-head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+
+  .record-actions {
+    justify-content: flex-end;
+  }
+
+  .card-head-row {
+    align-items: flex-start;
+  }
+
+  .card-head-title {
+    min-width: 0;
+  }
+
+  .card-head-actions {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .segment-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .segment-row :deep(.el-date-editor),
+  .segment-row :deep(.el-input) {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .segment-row :deep(.el-button) {
+    align-self: flex-end;
+  }
+
+  :deep(.long-plan-create-dialog .el-dialog__body) {
+    overflow-y: auto;
+  }
+
+  :deep(.long-plan-create-dialog .segment-row) {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  :deep(.long-plan-create-dialog .segment-row .el-date-editor),
+  :deep(.long-plan-create-dialog .segment-row .el-input) {
+    width: 100% !important;
+  }
+
+  :deep(.long-plan-create-dialog .segment-row .el-button) {
+    align-self: flex-end;
+  }
+
+  :deep(.plan-edit-dialog) {
+    margin: 0 auto !important;
+    max-height: calc(100dvh - 12px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+    display: flex;
+    flex-direction: column;
+  }
+
+  :deep(.sync-plan-dialog) {
+    margin: 0 auto !important;
+    max-height: calc(100dvh - 12px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+    display: flex;
+    flex-direction: column;
+  }
+
+  :deep(.sync-plan-dialog .el-form-item__label) {
+    float: none;
+    display: block;
+    width: auto !important;
+    margin-bottom: 6px;
+    text-align: left;
+    line-height: 1.4;
+  }
+
+  :deep(.sync-plan-dialog .el-form-item__content) {
+    margin-left: 0 !important;
+    width: 100%;
+    min-width: 0;
+  }
+
+  :deep(.sync-plan-dialog .el-dialog__body) {
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  :deep(.sync-plan-dialog .inline-actions .el-button) {
+    flex: 1 1 calc(50% - 8px);
+  }
+
+  :deep(.long-plan-create-dialog) {
+    margin: 0 auto !important;
+    max-height: calc(100dvh - 12px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+    display: flex;
+    flex-direction: column;
+  }
+
+  :deep(.long-plan-create-dialog .el-form-item__label) {
+    float: none;
+    display: block;
+    width: auto !important;
+    margin-bottom: 6px;
+    text-align: left;
+    line-height: 1.4;
+  }
+
+  :deep(.long-plan-create-dialog .el-form-item__content) {
+    margin-left: 0 !important;
+    width: 100%;
+    min-width: 0;
+  }
+
+  :deep(.plan-card-rename-dialog) {
+    width: calc(100vw - 24px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)) !important;
+    margin: 0 auto !important;
+  }
+
+  :deep(.ai-plan-dialog) {
+    margin: 0 auto !important;
+    max-height: calc(100dvh - 12px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+    display: flex;
+    flex-direction: column;
+  }
+
+  :deep(.ai-plan-dialog .el-form-item__label) {
+    float: none;
+    display: block;
+    width: auto !important;
+    margin-bottom: 6px;
+    text-align: left;
+    line-height: 1.4;
+  }
+
+  :deep(.ai-plan-dialog .el-form-item__content) {
+    margin-left: 0 !important;
+    width: 100%;
+    min-width: 0;
+  }
+
+  :deep(.ai-plan-dialog .el-dialog__body) {
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  :deep(.plan-edit-dialog .el-dialog__body) {
+    overflow-y: auto;
+  }
+
+  :deep(.plan-edit-dialog .segment-row) {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  :deep(.plan-edit-dialog .segment-row .el-date-editor),
+  :deep(.plan-edit-dialog .segment-row .el-input) {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  :deep(.plan-edit-dialog .segment-row .el-button) {
+    width: auto !important;
+    align-self: flex-end;
+  }
 }
 </style>
